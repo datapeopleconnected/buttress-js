@@ -21,7 +21,7 @@ import sinon from 'sinon';
 import Route from '../../../../../dist/routes/route.js';
 import UpdateMany from '../../../../../dist/routes/schema-routes/update-many.js';
 import { ApiError } from '../../../../../dist/helpers/errors.js';
-import { createSchemaModel, newId } from '../../../../schema-model.js';
+import { createFederatedSchemaModel, createSchemaModel, newId } from '../../../../schema-model.js';
 
 // A real schema model, so the route and access control run the real parseQuery, over rows in memory
 const schema = {
@@ -322,5 +322,94 @@ describe('schema-routes/UpdateMany:_broadcast', () => {
     await route._broadcast({}, {}, [refused], '/test-schema/bulk/update');
 
     assert.strictEqual(broadcast.called, false);
+  });
+});
+
+// SR-DPC-001 S4
+describe('schema-routes/UpdateMany:_withoutPrivate', () => {
+  it("leaves each item's changes to a private property out of what realtime listeners are told", () => {
+    const route = createRoute(createFakeModel([]));
+    route._privatePaths = [['secret']];
+    const items = [
+      {
+        id: DOC_1,
+        results: [
+          { type: 'scalar', path: 'value', value: 'updated' },
+          { type: 'scalar', path: 'secret', value: 'hidden' },
+        ],
+      },
+    ];
+
+    assert.deepStrictEqual(route._withoutPrivate(items), [
+      { id: DOC_1, results: [{ type: 'scalar', path: 'value', value: 'updated' }] },
+    ]);
+  });
+});
+
+// A bulk update's response is its items' changes, stripped as its activity is
+describe('schema-routes/UpdateMany:_respond', () => {
+  it("leaves each item's changes to a private property out of the response", async () => {
+    const route = createRoute(createFakeModel([]));
+    route._privatePaths = [['secret']];
+    route.redactResults = false;
+    route._close = () => {};
+    const res = { json: sinon.spy(), set: sinon.spy(), statusCode: 200 };
+
+    await route._respond({ context: { id: 'req-1', timer: { interval: 0, lapTime: 0 }, timings: {} } }, res, [
+      { id: DOC_1, results: [{ type: 'scalar', path: 'secret', value: 'hidden' }, { type: 'scalar', path: 'value', value: 'v' }] },
+    ]);
+
+    assert.deepStrictEqual(res.json.firstCall.args[0], [{ id: DOC_1, results: [{ type: 'scalar', path: 'value', value: 'v' }] }]);
+  });
+});
+
+describe('schema-routes/UpdateMany: a collection with remotes', () => {
+  afterEach(() => sinon.restore());
+
+  // agreement-1's partner names app-c, agreement-2's partner app, as its record's source, as when a partner names
+  // another partner's app
+  it('applies each item where its entity was read, whatever source it names, and tells the SPR where', async () => {
+    const own = [{ id: DOC_1, value: 'original' }];
+    const partner = [{ id: DOC_2, sourceId: 'app-c', value: 'original' }];
+    const { model, datastores } = createFederatedSchemaModel(
+      schema,
+      own,
+      { 'agreement-1': partner, 'agreement-2': [] },
+      { 'agreement-1': 'app-a', 'agreement-2': 'app-c' },
+    );
+    const route = createRoute(model);
+    const req = {
+      body: [
+        { id: DOC_1, body: { path: 'value', value: 'updated' } },
+        { id: DOC_2, sourceId: 'app-c', body: { path: 'value', value: 'updated' } },
+      ],
+      context: { id: 'req-1', ac: { policyConfigs: [{}] } },
+    };
+    const broadcast = sinon.stub(Route.prototype, '_broadcast').resolves();
+
+    const output = await route._exec(req, createRes(), await route._validate(req, {}));
+    await route._broadcast(req, {}, output, '/test-schema/bulk/update');
+
+    assert.deepStrictEqual([own[0].value, partner[0].value], ['updated', 'updated']);
+    assert.deepStrictEqual(datastores['agreement-2'].calls.filter(([call]) => call !== 'find'), []);
+    assert.deepStrictEqual(req.context.dataShareIds, [null, 'agreement-1']);
+    assert.strictEqual(broadcast.callCount, 1);
+  });
+
+  it('refuses an item whose entity more than one partner has, when it names no source', async () => {
+    const { model } = createFederatedSchemaModel(schema, [], {
+      'agreement-1': [{ id: DOC_1, sourceId: 'app-a', value: 'original' }],
+      'agreement-2': [{ id: DOC_1, sourceId: 'app-c', value: 'original' }],
+    });
+    const route = createRoute(model);
+    const req = {
+      body: [{ id: DOC_1, body: { path: 'value', value: 'updated' } }],
+      context: { id: 'req-1', ac: { policyConfigs: [{}] } },
+    };
+
+    const [item] = await route._validate(req, {});
+
+    assert.strictEqual(item.validation.status, 409);
+    assert.strictEqual(item.validation.code, 'ambiguous_source');
   });
 });

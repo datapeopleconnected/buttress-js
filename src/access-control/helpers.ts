@@ -14,10 +14,6 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { ObjectId } from 'bson';
-
-import Sugar from '../helpers/sugar.js';
-
 import Model from '../model/index.js';
 import Logging from '../helpers/logging.js';
 
@@ -26,26 +22,6 @@ import { ACEnv, ACPolicyEnvCombined } from './env.js';
 
 import { Policy, PolicyConfig } from '../model/core/policy.js';
 import { Schema } from '../helpers/schema.js';
-
-function isObjectId(value: unknown): value is ObjectId {
-  return value?.constructor?.name === 'ObjectId';
-}
-
-type AccessControlScalar = string | number | boolean | Date | ObjectId;
-export type AccessControlValue = AccessControlScalar | AccessControlScalar[] | null;
-
-function toComparableValue(value: AccessControlScalar): number | string {
-  if (value instanceof Date) return value.getTime();
-  if (typeof value === 'boolean') return Number(value);
-  if (isObjectId(value)) return value.toString();
-  return value;
-}
-
-function toDateComparableValue(value: AccessControlValue): string | number | Date | null {
-  if (value === null || Array.isArray(value) || typeof value === 'boolean') return null;
-  if (isObjectId(value)) return value.toString();
-  return value;
-}
 
 export function CombineEnvGroups(policy: ApplicablePolicyConfig, reqEnv: ACEnv): ACPolicyEnvCombined {
   let env: ACPolicyEnvCombined = { ...reqEnv };
@@ -70,167 +46,26 @@ class Helpers {
     Logging.logSilly(`Refreshed core cache got ${this.__coreSchema.length} schema`);
     return this.__coreSchema;
   }
-
-  evaluateOperation(lhs: AccessControlValue, rhs: AccessControlValue, operator: string): boolean {
-    let passed = false;
-
-    if (rhs === null || lhs === null) {
-      // If either are null then we'll just fail the check, with the exeption being if we're checking for null.
-      if (rhs === null && lhs === null && (operator === '$eq' || operator === '@eq')) return true;
-
-      return false;
-    }
-
-    switch (operator) {
-      case '$eq':
-      case '@eq':
-        {
-          passed = lhs.toString().toUpperCase() === rhs.toString().toUpperCase();
-        }
-        break;
-      case '$not':
-      case '@not':
-        {
-          passed = lhs.toString().toUpperCase() !== rhs.toString().toUpperCase();
-        }
-        break;
-      case '$gt':
-      case '@gt':
-        {
-          if (Array.isArray(lhs) || Array.isArray(rhs)) return false;
-          passed = toComparableValue(lhs) > toComparableValue(rhs);
-        }
-        break;
-      case '$lt':
-      case '@lt':
-        {
-          if (Array.isArray(lhs) || Array.isArray(rhs)) return false;
-          passed = toComparableValue(lhs) < toComparableValue(rhs);
-        }
-        break;
-      case '$gte':
-      case '@gte':
-        {
-          if (Array.isArray(lhs) || Array.isArray(rhs)) return false;
-          passed = toComparableValue(lhs) >= toComparableValue(rhs);
-        }
-        break;
-      case '$lte':
-      case '@lte':
-        {
-          if (Array.isArray(lhs) || Array.isArray(rhs)) return false;
-          passed = toComparableValue(lhs) <= toComparableValue(rhs);
-        }
-        break;
-      case '$gtDate':
-      case '@gtDate':
-        {
-          const lhsDate = wrangleDateType(lhs);
-          const rhsDate = toDateComparableValue(rhs);
-          if (!lhsDate) return false;
-          if (!rhsDate) return false;
-          passed = Sugar.Date.isAfter(lhsDate, rhsDate);
-        }
-        break;
-      case '$gteDate':
-      case '@gteDate':
-        {
-          const lhsDate = wrangleDateType(lhs);
-          const rhsDate = toDateComparableValue(rhs);
-          if (!lhsDate) return false;
-          if (!rhsDate) return false;
-          passed = Sugar.Date.isAfter(lhsDate, rhsDate) || Sugar.Date.is(lhsDate, rhsDate);
-        }
-        break;
-      case '$ltDate':
-      case '@ltDate':
-        {
-          const lhsDate = wrangleDateType(lhs);
-          const rhsDate = toDateComparableValue(rhs);
-          if (!lhsDate) return false;
-          if (!rhsDate) return false;
-          passed = Sugar.Date.isBefore(lhsDate, rhsDate);
-        }
-        break;
-      case '$lteDate':
-      case '@lteDate':
-        {
-          const lhsDate = wrangleDateType(lhs);
-          const rhsDate = toDateComparableValue(rhs);
-          if (!lhsDate) return false;
-          if (!rhsDate) return false;
-          passed = Sugar.Date.isBefore(lhsDate, rhsDate) || Sugar.Date.is(lhsDate, rhsDate);
-        }
-        break;
-      case '$rex':
-      case '@rex':
-        {
-          const regex = new RegExp(rhs.toString());
-          passed = regex.test(lhs.toString());
-        }
-        break;
-      case '$rexi':
-      case '@rexi':
-        {
-          const regex = new RegExp(rhs.toString(), 'i');
-          passed = regex.test(lhs.toString());
-        }
-        break;
-      case '$in':
-      case '@in':
-        {
-          if (!Array.isArray(rhs)) return false;
-
-          if (Array.isArray(lhs)) {
-            passed = lhs.every((i) => {
-              return rhs.some((j) => j.toString() === i.toString());
-            });
-          } else {
-            passed = Boolean(lhs) && rhs.some((i) => i.toString() === lhs.toString());
-          }
-        }
-        break;
-      case '$nin':
-      case '@nin':
-        {
-          if (!Array.isArray(rhs)) return false;
-
-          if (Array.isArray(lhs)) {
-            passed = lhs.every((i) => !rhs.some((j) => j.toString() === i.toString()));
-          } else {
-            passed = Boolean(lhs) && !rhs.some((i) => i.toString() === lhs.toString());
-          }
-        }
-        break;
-      case '$exists':
-      case '@exists':
-        {
-          if (Array.isArray(lhs)) {
-            passed = lhs.includes(rhs as AccessControlScalar);
-          } else {
-            passed = lhs.toString().includes(rhs.toString());
-          }
-        }
-        break;
-      default:
-    }
-
-    return passed;
-  }
-}
-
-// Wrangle the type over to a sugar date
-function wrangleDateType(val: unknown): Date | null | undefined {
-  if (val === null) return null;
-  if (val === undefined) return undefined;
-  if (typeof val === 'string') {
-    return Sugar.Date.create(val);
-  }
-
-  return val as Date;
 }
 
 export default new Helpers();
+
+// QUERY and SEARCH, its name before RFC 10008, are one verb to a policy: either grants both
+const QUERY_VERBS = ['QUERY', 'SEARCH'];
+
+// The verbs that read a schema, so the policies granting one decide what a token sees of it
+export const READ_POLICY_VERBS = ['GET', ...QUERY_VERBS];
+
+/**
+ * Whether a policy config's `verbs` grant `verb`.
+ * @param {string[]} verbs - the config's verbs
+ * @param {string} verb - a request's method
+ * @return {boolean}
+ */
+export function grantsVerb(verbs: string[], verb: string): boolean {
+  if (verbs.includes('%ALL%') || verbs.includes(verb)) return true;
+  return QUERY_VERBS.includes(verb) && verbs.some((v) => QUERY_VERBS.includes(v));
+}
 
 export function filterPolicyConfigs(
   policy: Policy,
@@ -240,13 +75,13 @@ export function filterPolicyConfigs(
   verbCheckReadability: boolean = false,
 ): PolicyConfig[] {
   return policy.config.filter((c) => {
-    if (!c.query || !c.verbs || !c.schema) return false;
+    // Lists, matched by their items. Text there, which an earlier release could store for a data sharing agreement,
+    // grants nothing: it would match by its substrings
+    if (!c.query || !Array.isArray(c.verbs) || !Array.isArray(c.schema)) return false;
 
-    let verbCheck = c.verbs.includes('%ALL%') || c.verbs.includes(verb);
-
-    if (verbCheckReadability) {
-      verbCheck = c.verbs.includes('%ALL%') || c.verbs.includes('GET') || c.verbs.includes('SEARCH');
-    }
+    const verbCheck = verbCheckReadability
+      ? READ_POLICY_VERBS.some((v) => grantsVerb(c.verbs, v))
+      : grantsVerb(c.verbs, verb);
 
     const schemaCheck =
       c.schema.includes('%ALL%') ||
@@ -257,105 +92,9 @@ export function filterPolicyConfigs(
   });
 }
 
-export function findPatternOccurrences(
-  obj: unknown,
-  pattern: string,
-): { path: string[]; type: 'key' | 'value'; value: string }[] {
-  const occurrences: { path: string[]; type: 'key' | 'value'; value: string }[] = [];
-  const regex = new RegExp(pattern);
-
-  function recurse(currentObj: unknown, path: string[] = []): void {
-    if (currentObj === null || currentObj === undefined) return;
-
-    if (Array.isArray(currentObj)) {
-      currentObj.forEach((item: unknown, index: number) => {
-        const arrayPath = [...path, index.toString()];
-        if (typeof item === 'string' && regex.test(item)) {
-          occurrences.push({ path: arrayPath, type: 'value', value: item });
-          return;
-        }
-
-        if (typeof item === 'object' && item !== null) recurse(item, arrayPath);
-      });
-      return;
-    }
-
-    if (typeof currentObj !== 'object') return;
-
-    for (const key in currentObj) {
-      if (!Object.prototype.hasOwnProperty.call(currentObj, key)) continue;
-
-      const currentPath = [...path, key];
-      const value = (currentObj as Record<string, unknown>)[key];
-
-      if (regex.test(key)) {
-        occurrences.push({ path: currentPath, type: 'key', value: key });
-      }
-
-      if (typeof value === 'string' && regex.test(value)) {
-        occurrences.push({ path: currentPath, type: 'value', value });
-        continue;
-      }
-
-      if (typeof value === 'object' && value !== null) recurse(value, currentPath);
-    }
-  }
-
-  recurse(obj);
-  return occurrences;
-}
-export function patternExists(obj: unknown, pattern: string): boolean {
-  const regex = new RegExp(pattern);
-
-  function recurse(currentObj: unknown): boolean {
-    if (currentObj === null || currentObj === undefined) return false;
-
-    if (Array.isArray(currentObj)) {
-      for (const item of currentObj as unknown[]) {
-        if (typeof item === 'string' && regex.test(item)) return true;
-        if (typeof item === 'object' && item !== null && recurse(item)) return true;
-      }
-      return false;
-    }
-
-    if (typeof currentObj !== 'object') return false;
-
-    for (const key in currentObj) {
-      if (!Object.prototype.hasOwnProperty.call(currentObj, key)) continue;
-
-      const value = (currentObj as Record<string, unknown>)[key];
-
-      if (regex.test(key)) return true;
-      if (typeof value === 'string' && regex.test(value)) return true;
-      if (typeof value === 'object' && value !== null && recurse(value)) return true;
-    }
-
-    return false;
-  }
-
-  return recurse(obj);
-}
-
-export function containsTokenLevelRef(applicablePolicy: ApplicablePolicyConfig) {
-  const outcome = {
-    env: false,
-    configEnv: false,
-    condition: false,
-    query: false,
-  };
-
-  const pattern = '(#env\.user)';
-  outcome.env = patternExists(applicablePolicy.env, pattern);
-  outcome.configEnv = patternExists(applicablePolicy.config.env, pattern);
-  outcome.query = patternExists(applicablePolicy.config.query, pattern);
-  outcome.condition = patternExists(applicablePolicy.config.condition, pattern);
-
-  return outcome;
-}
-
 /**
- * When a policy's limit runs out, or null if it has none. A cached policy has been through JSON, so its limit can be
- * a string.
+ * When a policy's limit runs out, or null if it has none, or one that isn't a date (which isPolicyExpired takes as run
+ * out). A cached policy has been through JSON, so its limit can be a string.
  */
 export const policyLimit = (policy: { limit?: unknown }): Date | null => {
   if (!policy.limit) return null;
@@ -364,9 +103,11 @@ export const policyLimit = (policy: { limit?: unknown }): Date | null => {
 };
 
 /**
- * Whether a policy's limit has run out, so it grants nothing.
+ * Whether a policy's limit has run out, so it grants nothing. A limit that isn't a date, which saving a policy refuses,
+ * has: it was read as no limit, so a policy stored with a mistyped date granted access for ever.
  */
 export const isPolicyExpired = (policy: { limit?: unknown }, now: Date = new Date()) => {
+  if (!policy.limit) return false;
   const limit = policyLimit(policy);
-  return limit !== null && limit.getTime() <= now.getTime();
+  return limit === null || limit.getTime() <= now.getTime();
 };

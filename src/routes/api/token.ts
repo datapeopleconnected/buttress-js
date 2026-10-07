@@ -77,7 +77,7 @@ routes.push(GetTokenList);
 class SearchTokenList extends Route {
   constructor(services: Services) {
     super('token', 'SEARCH TOKEN', services, Model.getCoreModel(TokenSchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.SEARCH;
+    this.verb = Route.Constants.Verbs.QUERY;
     this.authType = Route.Constants.Type.APP;
     this.permissions = Route.Constants.Permissions.SEARCH;
 
@@ -190,7 +190,7 @@ routes.push(DeleteAllTokens);
 class SearchUserToken extends Route {
   constructor(services: Services) {
     super('token/:userId', 'SEARCH USER TOKEN', services, Model.getCoreModel(TokenSchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.SEARCH;
+    this.verb = Route.Constants.Verbs.QUERY;
     this.authType = Route.Constants.Type.APP;
     this.permissions = Route.Constants.Permissions.SEARCH;
 

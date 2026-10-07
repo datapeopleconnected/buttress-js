@@ -11,6 +11,16 @@
       "redis": { "HMGET": 1, "SMEMBERS": 1 },
       "nrp": { "sock:worker:request-end": 1, "sock:worker:request-status": 1 }
     },
+    "QUERY /car": {
+      "mongo": { "find": 3 },
+      "redis": { "HMGET": 1, "SMEMBERS": 1 },
+      "nrp": { "sock:worker:request-end": 1, "sock:worker:request-status": 1 }
+    },
+    "QUERY /car/count": {
+      "mongo": { "aggregate": 1, "find": 2 },
+      "redis": { "HMGET": 1, "SMEMBERS": 1 },
+      "nrp": {}
+    },
     "SEARCH /car": {
       "mongo": { "find": 3 },
       "redis": { "HMGET": 1, "SMEMBERS": 1 },
@@ -54,9 +64,9 @@
   },
   "spr": {
     "POST /car, 2 sockets on admin-access + 2 on env-user-query": {
-      "mongo": { "find": 7 },
-      "redis": { "HMGET": 1, "SMEMBERS": 6, "ZRANGE": 3, "ZSCORE": 5 },
-      "nrp": { "spr:activity": 3 }
+      "mongo": { "find": 4 },
+      "redis": { "HMGET": 1, "SMEMBERS": 3, "SUNION": 1, "ZMSCORE": 1 },
+      "nrp": { "spr:activity": 2 }
     }
   }
 }

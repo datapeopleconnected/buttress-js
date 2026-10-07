@@ -37,6 +37,29 @@ const routes: CoreRouteClass[] = [];
 const invalidId = () => Helpers.Errors.badRequest('invalid_id', 'The id is not valid');
 
 /**
+ * Why a secure store can't be added, or null if it can: read as the schema types it, and its name a string, before the
+ * name is looked for. The name is looked for as it's given, so an object would act as a query operator, and a number,
+ * which the schema reads as text, wouldn't find the name stored. `index` is its place in a bulk add.
+ */
+const addProblem = (body: unknown, index?: number) => {
+  const validation = validateSchemaObject(SecureStoreSchemaModel.Schema, body);
+  if (!validation.isValid) return invalidEntityError(SecureStoreSchemaModel.Schema.name, validation, index);
+
+  const name = (body as { name?: unknown }).name;
+  if (typeof name === 'string') return null;
+
+  const received = Helpers.Schema.describeType(name);
+  return invalidEntityError(
+    SecureStoreSchemaModel.Schema.name,
+    {
+      invalid: [`name:${String(name)}[${typeof name}]`],
+      issues: [{ path: 'name', code: 'type', expected: 'string', received }],
+    },
+    index,
+  );
+};
+
+/**
  * @class AddSecureStore
  */
 class AddSecureStore extends Route {
@@ -55,12 +78,10 @@ class AddSecureStore extends Route {
       return Promise.reject(Helpers.Errors.badRequest('missing_field'));
     }
 
-    // Read as the schema types it, before its name is looked for
-    const validation = validateSchemaObject(SecureStoreSchemaModel.Schema, req.body);
-    if (!validation.isValid) {
-      const err = invalidEntityError(SecureStoreSchemaModel.Schema.name, validation);
-      this.log(`[${this.name}] ${err.message}`, Route.LogLevel.ERR);
-      return Promise.reject(err);
+    const problem = addProblem(req.body);
+    if (problem) {
+      this.log(`[${this.name}] ${problem.message}`, Route.LogLevel.ERR);
+      return Promise.reject(problem);
     }
 
     const secureStoreExist = await this.scoped(req, SecureStoreSchemaModel).findOne({
@@ -108,8 +129,17 @@ class AddManySecureStore extends Route {
       return Promise.reject(Helpers.Errors.badRequest('invalid_body'));
     }
 
-    const missingField = req.body.find((ss) => !ss.name);
-    if (missingField) {
+    // Each read as a single add reads it, before any name is looked for
+    for (const [index, secureStore] of req.body.entries()) {
+      const problem = addProblem(secureStore, index);
+      if (problem) {
+        this.log(`[${this.name}] ${problem.message}`, Route.LogLevel.ERR);
+        return Promise.reject(problem);
+      }
+    }
+
+    // An empty name, which the schema takes, is none, as a single add has it
+    if (req.body.some((ss) => !ss.name)) {
       this.log(`[${this.name}] Missing required secure store field`, Route.LogLevel.ERR);
       return Promise.reject(Helpers.Errors.badRequest('missing_field'));
     }

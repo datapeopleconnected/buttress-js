@@ -14,10 +14,12 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { describe, it, afterEach } from 'mocha';
+import { describe, it, beforeEach, afterEach } from 'mocha';
 import assert from 'assert';
 import sinon from 'sinon';
 import { Readable } from 'node:stream';
+import ButtressExport from '@buttress/api';
+import createConfig from '@dpc/node-env-obj';
 
 import AppSchemaModel from '../../../../../dist/model/core/app.js';
 import StandardModel from '../../../../../dist/model/type/standard.js';
@@ -32,6 +34,9 @@ import DeploymentSchemaModel from '../../../../../dist/model/core/deployment.js'
 import LambdaExecutionSchemaModel from '../../../../../dist/model/core/lambda-execution.js';
 import SecureStoreSchemaModel from '../../../../../dist/model/core/secure-store.js';
 import PolicySchemaModel from '../../../../../dist/model/core/policy.js';
+import Logging from '../../../../../dist/helpers/logging.js';
+
+const Config = createConfig();
 
 // AppSchemaModel.rm()'s real constructor/adapter setup need a live datastore, so bypass
 // it and only wire up what rm() itself touches: __modelManager, __nrp, and adapter.rm.
@@ -145,6 +150,127 @@ describe('model/core/AppSchemaModel:mergeRemoteSchema', () => {
       merged.map((schema) => schema.name),
       ['car'],
     );
+  });
+
+  describe('a partner that answers with something other than a list of schemas', () => {
+    afterEach(() => sinon.restore());
+
+    // Partners that answer the schema request with what they're given, by their api path
+    const answering = (answers) => {
+      sinon.stub(ButtressExport.default, 'new').callsFake(() => {
+        const api = {
+          init: async ({ apiPath }) => {
+            api.App = { getSchema: async () => answers[apiPath] };
+          },
+        };
+        return api;
+      });
+      const agreements = Object.keys(answers).map((apiPath) => ({
+        id: `dsa-${apiPath}`,
+        name: `from-${apiPath}`,
+        active: true,
+        remoteApp: { endpoint: 'http://partner.test', apiPath, token: 'partner-token' },
+      }));
+      const model = Object.create(AppSchemaModel.prototype);
+      model.__modelManager = { getCoreModel: () => ({ find: async () => Readable.from(agreements) }) };
+      return model;
+    };
+    const collections = () => [
+      { name: 'car', type: 'collection', properties: {}, remotes: [{ name: 'from-a', schema: 'car' }] },
+      { name: 'boat', type: 'collection', properties: {}, remotes: [{ name: 'from-b', schema: 'boat' }] },
+    ];
+    const boat = { name: 'boat', type: 'collection', properties: { hull: { __type: 'string' } } };
+
+    for (const [label, answer] of [
+      ['an object', { statusCode: 500, message: 'Internal Server Error' }],
+      ['a string', 'Bad Gateway'],
+      ['nothing', undefined],
+    ]) {
+      it(`is left out when it answers with ${label}, keeping the other partners' schemas`, async () => {
+        const warn = sinon.stub(Logging, 'logWarn');
+        const model = answering({ a: answer, b: [boat] });
+
+        const merged = await model.mergeRemoteSchema({ context: { authApp: { id: 'app-1' } } }, collections());
+
+        assert.deepStrictEqual(merged.find((schema) => schema.name === 'car').properties, {});
+        assert.deepStrictEqual(merged.find((schema) => schema.name === 'boat').properties, boat.properties);
+        sinon.assert.calledOnceWithMatch(warn, 'dsa-a');
+      });
+    }
+
+    it("passes over an item in a partner's list that isn't a schema", async () => {
+      sinon.stub(Logging, 'logWarn');
+      const model = answering({ a: [null, 'car'], b: [boat] });
+
+      const merged = await model.mergeRemoteSchema({ context: { authApp: { id: 'app-1' } } }, collections());
+
+      assert.deepStrictEqual(merged.find((schema) => schema.name === 'car').properties, {});
+      assert.deepStrictEqual(merged.find((schema) => schema.name === 'boat').properties, boat.properties);
+    });
+  });
+});
+
+// The partner's schema is fetched from its endpoint, which the data sharing allow-list limits as it does the agreement's
+// other connections
+describe('model/core/AppSchemaModel:mergeRemoteSchema, the data sharing allow-list', () => {
+  let saved;
+  beforeEach(() => {
+    saved = Config.dataSharing.allowedHosts;
+  });
+  afterEach(() => {
+    Config.dataSharing.allowedHosts = saved;
+    sinon.restore();
+  });
+
+  const fetching = (endpoint) => {
+    const created = sinon.stub(ButtressExport.default, 'new').callsFake(() => {
+      const api = {
+        init: async () => {
+          api.App = { getSchema: async () => [boat] };
+        },
+      };
+      return api;
+    });
+    const agreement = { id: 'dsa-a', name: 'from-a', active: true, remoteApp: { endpoint, apiPath: 'a', token: 't' } };
+    const model = Object.create(AppSchemaModel.prototype);
+    model.__modelManager = { getCoreModel: () => ({ find: async () => Readable.from([agreement]) }) };
+    return { model, created };
+  };
+  const boat = { name: 'boat', type: 'collection', properties: { hull: { __type: 'string' } } };
+  const collections = () => [
+    { name: 'boat', type: 'collection', properties: {}, remotes: [{ name: 'from-a', schema: 'boat' }] },
+  ];
+
+  it("doesn't fetch the schema of a partner at a host the list doesn't allow, leaving its properties out", async () => {
+    Config.dataSharing.allowedHosts = 'partner.example.com';
+    const warn = sinon.stub(Logging, 'logWarn');
+    const { model, created } = fetching('http://127.0.0.1:8000');
+
+    const merged = await model.mergeRemoteSchema({ context: { authApp: { id: 'app-1' } } }, collections());
+
+    assert.ok(created.notCalled, 'no client was made for the partner');
+    assert.deepStrictEqual(merged.find((schema) => schema.name === 'boat').properties, {});
+    sinon.assert.calledOnceWithMatch(warn, 'data_sharing_host_not_allowed');
+  });
+
+  it("doesn't fetch it from a listed host at a loopback address", async () => {
+    Config.dataSharing.allowedHosts = '*';
+    sinon.stub(Logging, 'logWarn');
+    const { model, created } = fetching('http://127.0.0.1:8000');
+
+    await model.mergeRemoteSchema({ context: { authApp: { id: 'app-1' } } }, collections());
+
+    assert.ok(created.notCalled);
+  });
+
+  it('fetches it as before when no list is set', async () => {
+    Config.dataSharing.allowedHosts = '';
+    const { model, created } = fetching('http://127.0.0.1:8000');
+
+    const merged = await model.mergeRemoteSchema({ context: { authApp: { id: 'app-1' } } }, collections());
+
+    assert.ok(created.calledOnce);
+    assert.deepStrictEqual(merged.find((schema) => schema.name === 'boat').properties, boat.properties);
   });
 });
 

@@ -53,6 +53,23 @@ export interface ACPolicyEnvCombined extends ACEnv {
   [custom: string]: unknown;
 }
 
+// How many #env values reading one can take, each referring to the next, before it's given up on
+const MAX_ENV_DEPTH = 16;
+
+// A policy's #env value that refers back to itself, directly or through other env values (or env lookups' queries), or
+// that takes more than MAX_ENV_DEPTH of them to read, which can't be read
+export class CircularEnvError extends Error {
+  constructor(chain: string[]) {
+    const [first] = chain;
+    super(
+      chain.length > MAX_ENV_DEPTH
+        ? `circular_policy_env: ${first} takes more than ${MAX_ENV_DEPTH} env values to read`
+        : `circular_policy_env: ${chain.join(' -> ')}`,
+    );
+    this.name = 'CircularEnvError';
+  }
+}
+
 export class PolicyEnv {
   static strPrefix = '#env.';
 
@@ -80,21 +97,27 @@ export class PolicyEnv {
    * Get the value of an environment variable.
    * @param key The key of the environment variable.
    * @param envVars The environment variables object - **Important:** This object will be modified to include the resolved environment variables.
+   * @param resolving The #env values being read that led to this one, so one referring back to them is refused.
    * @returns The value of the environment variable or the key itself if not found.
+   * @throws {CircularEnvError} when the value refers back to itself, or takes more than MAX_ENV_DEPTH values to read
    */
-  async getEnvValue(key: unknown, envVars: ACPolicyEnvCombined | null): Promise<unknown> {
+  async getEnvValue(key: unknown, envVars: ACPolicyEnvCombined | null, resolving: string[] = []): Promise<unknown> {
     if (!key || typeof key !== 'string' || !key.startsWith(PolicyEnv.strPrefix)) return key;
+
+    // Reading it again would read the same values for ever: the stack overflowed, or through a lookup, memory ran out
+    const chain = [...resolving, key];
+    if (resolving.includes(key) || chain.length > MAX_ENV_DEPTH) throw new CircularEnvError(chain);
 
     const path = key.replace(PolicyEnv.strPrefix, '');
     const value = Helpers.get(path, envVars);
 
     if (typeof value === 'object' && value !== null && 'collection' in value) {
       // The value was found in envVars, so they aren't null
-      return this.getQueryEnvironmentVar(key, envVars as ACPolicyEnvCombined);
+      return this.getQueryEnvironmentVar(key, envVars as ACPolicyEnvCombined, false, chain);
     }
 
     if (typeof value === 'string' && value.startsWith(PolicyEnv.strPrefix)) {
-      return this.getEnvValue(value, envVars);
+      return this.getEnvValue(value, envVars, chain);
     }
 
     // if (value?.constructor?.name === 'ObjectId') return value.toString();
@@ -105,6 +128,7 @@ export class PolicyEnv {
     environmentKey: string,
     envVars: ACPolicyEnvCombined,
     conditionFlag = false,
+    resolving: string[] = [],
   ): Promise<unknown> {
     if ((!environmentKey || !environmentKey.startsWith(PolicyEnv.strPrefix)) && !conditionFlag) return environmentKey;
 
@@ -125,7 +149,7 @@ export class PolicyEnv {
     if (root) {
       const isAppSchema = await this.__isAppSchema(root, envVars.appId);
       if (isAppSchema) {
-        return this.__queryAppSchemaEnvValue(queryValue as PolicyEnvQuery, environmentKey, envVars);
+        return this.__queryAppSchemaEnvValue(queryValue as PolicyEnvQuery, environmentKey, envVars, resolving);
       }
     }
 
@@ -143,7 +167,7 @@ export class PolicyEnv {
     return model ? true : false;
   }
 
-  async __findAndReplaceValues(query: unknown, envVars: ACPolicyEnvCombined) {
+  async __findAndReplaceValues(query: unknown, envVars: ACPolicyEnvCombined, resolving: string[] = []) {
     if (typeof query !== 'object' || query === null) {
       return;
     }
@@ -151,7 +175,7 @@ export class PolicyEnv {
     const paths = this.__findPaths(query);
     for await (const path of paths) {
       const dbQuery = path.reduce<unknown>((current, key) => current && (current as DynamicRow)[key], query);
-      const realValue = await this.getEnvValue(dbQuery, envVars);
+      const realValue = await this.getEnvValue(dbQuery, envVars, resolving);
 
       this.__setObjectValueByPath(query, path, realValue);
     }
@@ -162,7 +186,8 @@ export class PolicyEnv {
   __setObjectValueByPath(obj: object, path: (string | number)[], value: unknown) {
     const lastKey = path.pop();
     const parent = path.reduce<DynamicRow>((current, key) => current[key] as DynamicRow, obj as DynamicRow);
-    if (parent && lastKey) {
+    // A list's first item is at 0, so the key is checked for being there rather than for being truthy
+    if (parent && lastKey !== undefined) {
       parent[lastKey] = value;
     }
   }
@@ -187,7 +212,12 @@ export class PolicyEnv {
     return paths;
   }
 
-  async __queryAppSchemaEnvValue(envObj: PolicyEnvQuery, envKey: string, envVars: ACPolicyEnvCombined) {
+  async __queryAppSchemaEnvValue(
+    envObj: PolicyEnvQuery,
+    envKey: string,
+    envVars: ACPolicyEnvCombined,
+    resolving: string[] = [],
+  ) {
     const schema = envObj.collection;
     const query = Filter.convertQueryPrefixOperators(envObj.query);
     const output = envObj.output;
@@ -195,7 +225,8 @@ export class PolicyEnv {
 
     // Check the envVar to see if
     if (envVars[envKey]) return envVars[envKey];
-    await this.__findAndReplaceValues(query, envVars);
+    // The lookup's query is read with the env values that led to it, so one referring back to the lookup is refused
+    await this.__findAndReplaceValues(query, envVars, resolving);
 
     // __isAppSchema has checked the appId
     const model = await Model.getAppModel(envVars.appId as string, schema);

@@ -127,7 +127,7 @@ describe('Secure Store API', async () => {
 			const secureStores = await bjsReq(
 				{
 					url: `${ENDPOINT.REST}/api/v1/secure-store`,
-					method: 'SEARCH',
+					method: 'QUERY',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ query: { name: testEnv.secureStores.app2.name } }),
 				},
@@ -314,7 +314,7 @@ describe('Secure Store API', async () => {
 			const secureStores = await bjsReq(
 				{
 					url: `${ENDPOINT.REST}/api/v1/secure-store`,
-					method: 'SEARCH',
+					method: 'QUERY',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ query: { name: testEnv.secureStores.primary.name } }),
 				},
@@ -330,7 +330,7 @@ describe('Secure Store API', async () => {
 			const count = await bjsReq(
 				{
 					url: `${ENDPOINT.REST}/api/v1/secure-store/count`,
-					method: 'SEARCH',
+					method: 'QUERY',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ query: { name: testEnv.secureStores.primary.name } }),
 				},

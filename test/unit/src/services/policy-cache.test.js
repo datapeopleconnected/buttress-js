@@ -22,7 +22,7 @@ import createConfig from '@dpc/node-env-obj';
 const Config = createConfig();
 
 import { redisPrefix } from '../../../../dist/helpers/index.js';
-import { PolicyCache } from '../../../../dist/services/policy-cache.js';
+import { PolicyCache, policyTokensKey, tokenPoliciesKey } from '../../../../dist/services/policy-cache.js';
 
 const K = (k) => redisPrefix(Config.redis.scope, k);
 const Redis = {
@@ -146,6 +146,11 @@ const Redis = {
     return score !== undefined ? score : null;
   },
 
+  async zmScore(key, members) {
+    const zset = this._data.get(key);
+    return members.map((member) => (zset?.get(member) !== undefined ? zset.get(member) : null));
+  },
+
   async zRangeByScore(key, min, max) {
     const zset = this._data.get(key);
     if (!zset) return [];
@@ -183,6 +188,22 @@ const Redis = {
     const existed = this._data.has(key);
     this._data.delete(key);
     return existed ? 1 : 0;
+  },
+
+  async get(key) {
+    return this._data.get(key) ?? null;
+  },
+
+  async set(key, value, options = {}) {
+    const previous = this._data.get(key) ?? null;
+    this._data.set(key, value);
+    return options.GET ? previous : 'OK';
+  },
+
+  // As node-redis 5 gives them, a page of keys at a time
+  async *scanIterator({ MATCH = '*' } = {}) {
+    const pattern = new RegExp(`^${MATCH.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`);
+    yield [...this._data.keys()].filter((key) => pattern.test(key));
   },
 };
 
@@ -285,7 +306,7 @@ describe('services/policy-cache', () => {
   describe('setTokenIdAsStale', () => {
     it('should add STALE marker to token policy set', async () => {
       await cache.setTokenIdAsStale('tok1');
-      const members = await Redis.sMembers(K('token:tok1:policies'));
+      const members = await Redis.sMembers(K(tokenPoliciesKey('tok1')));
       assert(members.includes('STALE'));
     });
   });
@@ -309,7 +330,7 @@ describe('services/policy-cache', () => {
     });
 
     it('should rehydrate when policies are stale', async () => {
-      await Redis.sAdd(K('token:tok1:policies'), 'STALE');
+      await Redis.sAdd(K(tokenPoliciesKey('tok1')), 'STALE');
       cache = new PolicyCache(Redis, mockModelManager({
         Token: tokenModel,
         Policy: mockModel(policy1),
@@ -319,7 +340,7 @@ describe('services/policy-cache', () => {
     });
 
     it('should return cached policies when not stale', async () => {
-      await Redis.sAdd(K('token:tok1:policies'), 'p1');
+      await Redis.sAdd(K(tokenPoliciesKey('tok1')), 'p1');
       await Redis.hSet(K('policies'), 'p1', JSON.stringify(policy1));
       const result = await cache.getPoliciesByToken(token);
       assert.strictEqual(result.length, 1);
@@ -329,7 +350,7 @@ describe('services/policy-cache', () => {
     // A worker keeps the tokens it loaded in memory, and reloads them a moment after a token's policy properties change,
     // so the token a request carries can be older than the set the cache has worked out from the stored one
     it("should give the policies cached for the token, whatever policy properties the request's copy of it has", async () => {
-      await Redis.sAdd(K('token:tok1:policies'), 'p1');
+      await Redis.sAdd(K(tokenPoliciesKey('tok1')), 'p1');
       await Redis.hSet(K('policies'), 'p1', JSON.stringify(policy1));
       const staleToken = { ...token, policyProperties: {} };
 
@@ -350,7 +371,41 @@ describe('services/policy-cache', () => {
     });
   });
 
+  // The Redis commands the cache sends while `fn` runs, by name
+  const commandsDuring = async (fn) => {
+    const commands = [];
+    const originals = {};
+    for (const name of Object.keys(Redis).filter((key) => typeof Redis[key] === 'function' && key !== 'reset')) {
+      originals[name] = Redis[name];
+      Redis[name] = async (...args) => {
+        commands.push(name);
+        return originals[name].apply(Redis, args);
+      };
+    }
+    try {
+      await fn();
+    } finally {
+      Object.assign(Redis, originals);
+    }
+    return commands;
+  };
+
   describe('getPoliciesByRestActivity', () => {
+    it("reads the ids of the policies for the schema, %ALL% and %APP_SCHEMA% in one SUNION", async () => {
+      await Redis.sAdd(K('app:app1:schema:user'), 'p1');
+      await Redis.sAdd(K('app:app1:schema:%APP_SCHEMA%'), 'p2');
+      await Redis.hSet(K('policies'), 'p1', JSON.stringify(policy1));
+      await Redis.hSet(K('policies'), 'p2', JSON.stringify(policy2));
+
+      let found;
+      const commands = await commandsDuring(async () => {
+        found = await cache.getPoliciesByRestActivity({ appId: 'app1', schemaName: 'user' });
+      });
+
+      assert.deepStrictEqual(found.map((policy) => policy.id).sort(), ['p1', 'p2']);
+      assert.deepStrictEqual(commands, ['sUnion', 'hmGet']);
+    });
+
     it('should return empty array when no policies match', async () => {
       const result = await cache.getPoliciesByRestActivity({ appId: 'app1', schemaName: 'unknown' });
       assert.deepStrictEqual(result, []);
@@ -448,7 +503,7 @@ describe('services/policy-cache', () => {
       }
 
       assert.strictEqual(await cache.isTokenConnected('tok1'), true);
-      assert.deepStrictEqual(await Redis.sMembers(K('token:tok1:policies')), ['p1']);
+      assert.deepStrictEqual(await Redis.sMembers(K(tokenPoliciesKey('tok1'))), ['p1']);
     });
 
     it("forgets an expired token's sockets", async () => {
@@ -470,6 +525,21 @@ describe('services/policy-cache', () => {
       assert(members.includes('p1'));
     });
 
+    // SR-DPC-001 S21: text there grants nothing, so isn't looked up by its characters
+    it("should not index a config whose verbs or schema aren't lists", async () => {
+      await cache.addPolicy({
+        ...policy1,
+        config: [
+          { verbs: ['GET'], schema: 'car', query: {} },
+          { verbs: 'GET', schema: ['user'], query: {} },
+        ],
+      });
+
+      for (const schema of ['car', 'c', 'a', 'r', 'user']) {
+        assert.deepStrictEqual(await Redis.sMembers(K(`app:app1:schema:${schema}`)), [], schema);
+      }
+    });
+
     it('should not store duplicate policies', async () => {
       await cache.addPolicy(policy1);
       assert.strictEqual(await cache.addPolicy(policy1), false);
@@ -486,11 +556,11 @@ describe('services/policy-cache', () => {
 
   describe('clearTokenPolicies', () => {
     it('should clear token policy links and indexed properties', async () => {
-      await Redis.sAdd(K('token:tok1:policies'), 'p1');
-      await Redis.sAdd(K('policy:p1:tokens'), 'tok1');
+      await Redis.sAdd(K(tokenPoliciesKey('tok1')), 'p1');
+      await Redis.sAdd(K(policyTokensKey('p1')), 'tok1');
       await Redis.sAdd(K('token:tok1:policyProperties'), 'role');
       await cache.clearTokenPolicies('tok1');
-      const remaining = await Redis.sMembers(K('token:tok1:policies'));
+      const remaining = await Redis.sMembers(K(tokenPoliciesKey('tok1')));
       assert.strictEqual(remaining.length, 0);
     });
   });
@@ -498,9 +568,9 @@ describe('services/policy-cache', () => {
   describe('connectTokenToPolicy / disconnectTokenFromPolicy', () => {
     it('should connect a token to a policy', async () => {
       await cache.connectTokenToPolicy('tok1', 'p1');
-      const tokenPols = await Redis.sMembers(K('token:tok1:policies'));
+      const tokenPols = await Redis.sMembers(K(tokenPoliciesKey('tok1')));
       assert(tokenPols.includes('p1'));
-      const polTokens = await Redis.sMembers(K('policy:p1:tokens'));
+      const polTokens = await Redis.sMembers(K(policyTokensKey('p1')));
       assert(polTokens.includes('tok1'));
     });
 
@@ -512,7 +582,7 @@ describe('services/policy-cache', () => {
     it('should disconnect a token from a policy', async () => {
       await cache.connectTokenToPolicy('tok1', 'p1');
       await cache.disconnectTokenFromPolicy('tok1', 'p1');
-      const tokenPols = await Redis.sMembers(K('token:tok1:policies'));
+      const tokenPols = await Redis.sMembers(K(tokenPoliciesKey('tok1')));
       assert(!tokenPols.includes('p1'));
     });
 
@@ -618,16 +688,15 @@ describe('services/policy-cache', () => {
       cache = new PolicyCache(Redis, mockModelManager({ Policy: mockModel(policy1) }));
       await cache.invalidatePolicyAndTokensBySelection('p1');
 
-      const adminPolicies = await Redis.sMembers(K('token:admin-tok:policies'));
-      const userPolicies = await Redis.sMembers(K('token:user-tok:policies'));
+      const adminPolicies = await Redis.sMembers(K(tokenPoliciesKey('admin-tok')));
+      const userPolicies = await Redis.sMembers(K(tokenPoliciesKey('user-tok')));
       assert(adminPolicies.includes('STALE'), 'admin-tok should be marked stale');
       assert(!userPolicies.includes('STALE'), 'user-tok should not be marked stale');
     });
 
-    it('should mark a token stale if ANY selected property matches, not requiring all of them', async () => {
-      // roleOnly-tok only has `role`, deptOnly-tok only has `dept` - neither has both properties that
-      // the policy selects on, but the real match is an OR across selection keys, so both should
-      // still be invalidated.
+    // D-35: a selection selects a token only if every key holds and the token has each one
+    it('should mark only the tokens that have every selected property, as a selection needs them all', async () => {
+      await cache.indexTokenPolicyProperties('both-tok', { role: 'admin', dept: 'eng' });
       await cache.indexTokenPolicyProperties('roleOnly-tok', { role: 'admin' });
       await cache.indexTokenPolicyProperties('deptOnly-tok', { dept: 'eng' });
 
@@ -639,10 +708,43 @@ describe('services/policy-cache', () => {
       cache = new PolicyCache(Redis, mockModelManager({ Policy: mockModel(multiKeyPolicy) }));
       await cache.invalidatePolicyAndTokensBySelection('p3');
 
-      const rolePolicies = await Redis.sMembers(K('token:roleOnly-tok:policies'));
-      const deptPolicies = await Redis.sMembers(K('token:deptOnly-tok:policies'));
-      assert(rolePolicies.includes('STALE'), 'roleOnly-tok should be marked stale');
-      assert(deptPolicies.includes('STALE'), 'deptOnly-tok should be marked stale');
+      assert((await Redis.sMembers(K(tokenPoliciesKey('both-tok')))).includes('STALE'), 'both-tok should be marked stale');
+      assert(!(await Redis.sMembers(K(tokenPoliciesKey('roleOnly-tok')))).includes('STALE'), 'roleOnly-tok lacks dept');
+      assert(!(await Redis.sMembers(K(tokenPoliciesKey('deptOnly-tok')))).includes('STALE'), 'deptOnly-tok lacks role');
+    });
+
+    it('should mark the tokens having any property an @or names, when the selection has no other keys', async () => {
+      await cache.indexTokenPolicyProperties('role-tok', { role: 'admin' });
+      await cache.indexTokenPolicyProperties('dept-tok', { dept: 'eng' });
+      await cache.indexTokenPolicyProperties('other-tok', { team: 'x' });
+
+      const orPolicy = {
+        id: 'p5', name: 'or-policy', _appId: 'app1', priority: 1,
+        selection: { '@or': [{ role: { '@eq': 'admin' } }, { '@and': [{ dept: { '@eq': 'eng' } }] }] },
+        config: [{ verbs: ['GET'], schema: ['user'], query: {}, projection: null, condition: null }],
+      };
+      cache = new PolicyCache(Redis, mockModelManager({ Policy: mockModel(orPolicy) }));
+      await cache.invalidatePolicyAndTokensBySelection('p5');
+
+      assert((await Redis.sMembers(K(tokenPoliciesKey('role-tok')))).includes('STALE'));
+      assert((await Redis.sMembers(K(tokenPoliciesKey('dept-tok')))).includes('STALE'));
+      assert(!(await Redis.sMembers(K(tokenPoliciesKey('other-tok')))).includes('STALE'));
+    });
+
+    it('should narrow an @or selection by the keys beside it', async () => {
+      await cache.indexTokenPolicyProperties('admin-tok', { role: 'admin', dept: 'eng' });
+      await cache.indexTokenPolicyProperties('user-tok', { role: 'user', dept: 'eng' });
+
+      const mixedPolicy = {
+        id: 'p6', name: 'mixed-policy', _appId: 'app1', priority: 1,
+        selection: { role: { '@eq': 'admin' }, '@or': [{ dept: { '@eq': 'eng' } }, { team: { '@eq': 'x' } }] },
+        config: [{ verbs: ['GET'], schema: ['user'], query: {}, projection: null, condition: null }],
+      };
+      cache = new PolicyCache(Redis, mockModelManager({ Policy: mockModel(mixedPolicy) }));
+      await cache.invalidatePolicyAndTokensBySelection('p6');
+
+      assert((await Redis.sMembers(K(tokenPoliciesKey('admin-tok')))).includes('STALE'));
+      assert(!(await Redis.sMembers(K(tokenPoliciesKey('user-tok')))).includes('STALE'));
     });
 
     it('should fall back to the broad key index for operators other than @eq', async () => {
@@ -656,7 +758,7 @@ describe('services/policy-cache', () => {
       cache = new PolicyCache(Redis, mockModelManager({ Policy: mockModel(rangePolicy) }));
       await cache.invalidatePolicyAndTokensBySelection('p4');
 
-      const policies = await Redis.sMembers(K('token:older-tok:policies'));
+      const policies = await Redis.sMembers(K(tokenPoliciesKey('older-tok')));
       assert(policies.includes('STALE'), 'older-tok should still be caught by the broad fallback index');
     });
 
@@ -671,13 +773,42 @@ describe('services/policy-cache', () => {
     });
   });
 
+  describe('getConnectedTokenIdsByPolicyIds', () => {
+    it("gives each policy's connected tokens, looking at when they stop being connected in one ZMSCORE", async () => {
+      await Redis.sAdd(K(policyTokensKey('p1')), ['tok1', 'tok2']);
+      await Redis.sAdd(K(policyTokensKey('p2')), ['tok2', 'tok3']);
+      await cache.addConnectedToken('tok1');
+      await cache.addConnectedToken('tok2');
+      // tok3 was connected, and its connection has run out
+      await Redis.zAdd(K('connected-tokens'), [{ score: 1, value: 'tok3' }]);
+
+      let connected;
+      const commands = await commandsDuring(async () => {
+        connected = await cache.getConnectedTokenIdsByPolicyIds(['p1', 'p2', 'p3']);
+      });
+
+      assert.deepStrictEqual([...connected], [['p1', ['tok1', 'tok2']], ['p2', ['tok2']], ['p3', []]]);
+      assert.deepStrictEqual(commands, ['sMembers', 'sMembers', 'sMembers', 'zmScore']);
+    });
+
+    it('looks at no connections when the policies have no tokens', async () => {
+      let connected;
+      const commands = await commandsDuring(async () => {
+        connected = await cache.getConnectedTokenIdsByPolicyIds(['p1']);
+      });
+
+      assert.deepStrictEqual([...connected], [['p1', []]]);
+      assert.deepStrictEqual(commands, ['sMembers']);
+    });
+  });
+
   describe('getConnectedTokenIdsByPolicyId', () => {
     it('should return empty for policy with no tokens', async () => {
       assert.deepStrictEqual(await cache.getConnectedTokenIdsByPolicyId('p1'), []);
     });
 
     it('should return connected token IDs', async () => {
-      await Redis.sAdd(K('policy:p1:tokens'), 'tok1');
+      await Redis.sAdd(K(policyTokensKey('p1')), 'tok1');
       await cache.addConnectedToken('tok1');
       const result = await cache.getConnectedTokenIdsByPolicyId('p1');
       assert(result.includes('tok1'));
@@ -769,7 +900,40 @@ describe('services/policy-cache: invalidating a policy', () => {
     await cache.reselectToken(admin.id);
 
     assert.deepStrictEqual(await cache.getConnectedTokenIdsByPolicyId('p1'), []);
-    assert.deepStrictEqual(await Redis.sMembers(K(`token:${admin.id}:policies`)), []);
+    assert.deepStrictEqual(await Redis.sMembers(K(tokenPoliciesKey(admin.id))), []);
+  });
+
+  // An earlier release, running alongside this one in a rolling deploy, caches a token's policies by its own rules (any
+  // key, ignoring case) under keys without a version
+  const cacheAsEarlierRelease = async () => {
+    Redis.reset();
+    await Redis.sAdd(K(`token:${admin.id}:policies`), 'p1');
+    await Redis.sAdd(K('policy:p1:tokens'), admin.id);
+    await cache.addConnectedToken(admin.id);
+  };
+
+  it("doesn't use the policies an earlier release cached for a token, as in a rolling deploy", async () => {
+    await cacheAsEarlierRelease();
+    // Selected by the earlier rules, which ignored case: its stored role is 'admin', the selection's 'ADMIN'
+    db.policies = [adminPolicy({ selection: { role: { '@eq': 'ADMIN' } } })];
+
+    assert.deepStrictEqual((await cache.getPoliciesByToken(admin)).map((p) => p.id), []);
+    assert.deepStrictEqual(await cache.getConnectedTokenIdsByPolicyId('p1'), []);
+    // The earlier release's own set is left to it
+    assert.deepStrictEqual(await Redis.sMembers(K(`token:${admin.id}:policies`)), ['p1']);
+  });
+
+  it('works out again, once, the policies of tokens cached by other selection rules, for realtime to send by', async () => {
+    await cacheAsEarlierRelease();
+    assert.deepStrictEqual(await cache.getConnectedTokenIdsByPolicyId('p1'), []);
+
+    const tokenIds = await cache.tokensCachedByOtherRules();
+    assert.deepStrictEqual(tokenIds, [admin.id]);
+    await cache.reselectTokens(tokenIds);
+    assert.deepStrictEqual(await cache.getConnectedTokenIdsByPolicyId('p1'), [admin.id]);
+
+    // The rules haven't changed since, so they aren't looked for again
+    assert.deepStrictEqual(await cache.tokensCachedByOtherRules(), []);
   });
 
   it("forgets a token's policies when it's reselected after being deleted", async () => {
@@ -811,7 +975,7 @@ describe('services/policy-cache: rehydrating a token while it is read', () => {
     for (const m of methods) {
       Redis[m] = async (...args) => {
         const result = await originals[m].apply(Redis, args);
-        seen.push((await Redis.sMembers(K('token:tok1:policies'))).sort().join(','));
+        seen.push((await Redis.sMembers(K(tokenPoliciesKey('tok1')))).sort().join(','));
         return result;
       };
     }
@@ -822,6 +986,6 @@ describe('services/policy-cache: rehydrating a token while it is read', () => {
     }
 
     assert.deepStrictEqual([...new Set(seen)], ['p1,p2,p3']);
-    assert.deepStrictEqual((await Redis.sMembers(K('policy:p2:tokens'))), ['tok1']);
+    assert.deepStrictEqual((await Redis.sMembers(K(policyTokensKey('p2')))), ['tok1']);
   });
 });

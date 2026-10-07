@@ -18,8 +18,10 @@ import { describe, it, beforeEach, afterEach } from 'mocha';
 import assert from 'assert';
 import sinon from 'sinon';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
+import http from 'node:http';
 import { Readable } from 'node:stream';
 import ivm from 'isolated-vm';
 import createConfig from '@dpc/node-env-obj';
@@ -34,7 +36,7 @@ import UserSchemaModel from '../../../../dist/model/core/user.js';
 import SecureStoreSchemaModel from '../../../../dist/model/core/secure-store.js';
 import DeploymentSchemaModel from '../../../../dist/model/core/deployment.js';
 import Logging from '../../../../dist/helpers/logging.js';
-import lambdaHelpers from '../../../../dist/lambda-helpers/helpers.js';
+import LambdaRun from '../../../../dist/lambda-helpers/lambda-run.js';
 
 const Config = createConfig();
 
@@ -542,6 +544,73 @@ describe('lambda/LambdaRunner:handleLambdaExecutionMessage a lambda that fails',
     assert.match(logs[1].log, /lambda broke/);
   });
 
+  describe('answering the API caller with the status the lambda threw', () => {
+    async function answerFor(body) {
+      const updateById = sinon.stub().resolves();
+      const { nrp } = await runFailingLambda(updateById, undefined, body);
+      const result = nrp.emit.getCalls().find((call) => call.args[0] === 'lambda:worker:execution-result');
+      const errored = updateById.getCalls().filter((call) => call.args[1].$set?.status === 'ERROR');
+      return { ...JSON.parse(result.args[1]), erroredWrites: errored.length };
+    }
+
+    it('gives the status an error was thrown with, its message, and still records the execution as errored', async function () {
+      this.timeout(10000);
+
+      const answer = await answerFor("throw Object.assign(new Error('too many guesses'), { httpStatus: 429 });");
+
+      assert.strictEqual(answer.code, 429);
+      assert.match(answer.err, /too many guesses/);
+      assert.strictEqual(answer.erroredWrites, 1);
+    });
+
+    it('gives 400 for an error thrown without a status', async function () {
+      this.timeout(10000);
+
+      assert.strictEqual((await answerFor("throw new Error('lambda broke');")).code, 400);
+    });
+
+    it("gives 400 for a status that isn't an error's", async function () {
+      this.timeout(10000);
+
+      assert.strictEqual((await answerFor("throw Object.assign(new Error('fine'), { httpStatus: 200 });")).code, 400);
+    });
+
+    it("gives 400 for a status that isn't a number", async function () {
+      this.timeout(10000);
+
+      assert.strictEqual((await answerFor("throw Object.assign(new Error('odd'), { httpStatus: '429' });")).code, 400);
+    });
+
+    it('gives the code and whether to retry an error was thrown with', async function () {
+      this.timeout(10000);
+
+      const answer = await answerFor(
+        "throw Object.assign(new Error('busy'), { code: 'RATE_LIMITED', retryable: true, httpStatus: 503 });",
+      );
+
+      assert.strictEqual(answer.code, 503);
+      assert.deepStrictEqual(
+        { code: answer.errDetails.code, retryable: answer.errDetails.retryable, message: answer.errDetails.message },
+        { code: 'RATE_LIMITED', retryable: true, message: 'busy' },
+      );
+    });
+
+    it("leaves out a code that isn't a string, as an ErrorResult's numeric one", async function () {
+      this.timeout(10000);
+
+      const answer = await answerFor("throw Object.assign(new Error('nope'), { code: 404, httpStatus: 404 });");
+
+      assert.strictEqual(answer.code, 404);
+      assert.strictEqual(answer.errDetails.code, undefined);
+    });
+
+    it("gives 400 for a thrown value that isn't an error, as a rejected fetch gives with its upstream status", async function () {
+      this.timeout(10000);
+
+      assert.strictEqual((await answerFor("throw { message: 'upstream said no', httpStatus: 401 };")).code, 400);
+    });
+  });
+
   it('answers the API caller when the execution fails before the lambda runs', async function () {
     this.timeout(10000);
     const updateById = sinon.stub().resolves();
@@ -680,6 +749,18 @@ describe('lambda/LambdaRunner:execute logs', () => {
     assert.match(first, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     assert.match(second, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     assert.notStrictEqual(first, second);
+  });
+
+  it('gives a lambda a hash of a message from the host', async function () {
+    this.timeout(10000);
+
+    const update = await complete(`
+      lambda.log(await lambda.cryptoCreateHash({ algorithm: 'sha256', message: 'abc' }));
+    `);
+
+    // The host hashes the message as JSON, as Snippet.Helpers.createMessageHash has always been given it
+    const expected = crypto.createHash('sha256').update(JSON.stringify('abc'), 'utf8').digest('hex');
+    assert.deepStrictEqual(update.$push.logs.$each, [{ log: expected, type: 'log' }]);
   });
 
   it('refuses a lambda more random bytes than the web crypto allows at once', async function () {
@@ -1120,7 +1201,10 @@ describe('lambda/LambdaRunner:execute caller credentials', () => {
   async function given(trigger, execution, callerTokenType = 'app') {
     const { runner, nrp } = createRunner();
     await runner.init();
-    const callerToken = { id: 'caller-token', value: 'caller-token-value', type: callerTokenType, _userId: 'user-1' };
+    const callerToken = {
+      id: 'caller-token', value: 'caller-token-value', type: callerTokenType,
+      _userId: 'user-1', _lambdaId: 'lambda-2', _appId: 'app-1',
+    };
     stubModel(
       new Map([
         [SecureStoreSchemaModel, { findOne: async () => null }],
@@ -1130,6 +1214,8 @@ describe('lambda/LambdaRunner:execute caller credentials', () => {
         [TokenSchemaModel, {
           createId: (v) => v,
           find: async (query) => Readable.from([query._id ? callerToken : { value: 'lambda-token' }]),
+          // The caller's token, unless it has been deleted since the call was queued
+          findById: async (id) => (id === 'caller-token' ? callerToken : null),
         }],
         [LambdaExecutionSchemaModel, {
           ...fakeExecutionModel({ updateById: sinon.stub().resolves() }),
@@ -1143,7 +1229,7 @@ describe('lambda/LambdaRunner:execute caller credentials', () => {
       runner._context.evalSync(`
         globalThis.Buttress = { clean() {}, initialised: false, init: async () => {} };
         globalThis['lambda_lambda-1'] = class {
-          async execute() { lambda.setResult({ userId: lambdaInfo.userId, userToken: lambdaInfo.userToken ?? null, appToken: buttressOptions.appToken, headers: lambda.req.headers }); }
+          async execute() { lambda.setResult({ userId: lambdaInfo.userId, callerType: lambdaInfo.callerType, callerId: lambdaInfo.callerId, info: lambdaInfo, execution: lambdaExecution, userToken: lambdaInfo.userToken ?? null, appToken: buttressOptions.appToken, headers: lambda.req.headers }); }
         };
       `);
     });
@@ -1157,6 +1243,8 @@ describe('lambda/LambdaRunner:execute caller credentials', () => {
     const savedApp = { protocol: Config.app.protocol, host: Config.app.host };
     Config.app.protocol = 'http';
     Config.app.host = 'buttress.test';
+    // The run the lambda's host functions act for, whose caller the host keeps
+    const runs = sinon.spy(LambdaRun, 'start');
     try {
       await runner.execute(lambda, exec, { id: 'app-1', apiPath: 'test' }, 'API_ENDPOINT', { reqId: 'req-1', headers });
     } finally {
@@ -1164,7 +1252,7 @@ describe('lambda/LambdaRunner:execute caller credentials', () => {
       runner._isolate.dispose();
     }
     const resultCall = nrp.emit.getCalls().find((call) => call.args[0] === 'lambda:worker:execution-result');
-    return { ...JSON.parse(resultCall.args[1]).res, hostCaller: lambdaHelpers.caller };
+    return { ...JSON.parse(resultCall.args[1]).res, hostCaller: runs.returnValues[0].caller };
   }
 
   it("gives an endpoint that doesn't use the caller's token neither the token nor its credential headers", async function () {
@@ -1189,6 +1277,74 @@ describe('lambda/LambdaRunner:execute caller credentials', () => {
     assert.strictEqual(seen.hostCaller.token, 'caller-token-value');
     const { hostCaller, ...inIsolate } = seen;
     assert.ok(!JSON.stringify(inIsolate).includes('caller-token-value'));
+  });
+
+  it("tells a lambda who called it by the owner of the token, whatever type it is", async function () {
+    this.timeout(10000);
+    const trigger = { type: 'API_ENDPOINT', apiEndpoint: { url: 'x', useCallerToken: false } };
+    const owners = [];
+    for (const type of ['user', 'lambda', 'app']) {
+      const seen = await given(trigger, { _callerTokenId: 'caller-token' }, type);
+      owners.push([seen.callerType, seen.callerId]);
+      sinon.restore();
+    }
+
+    assert.deepStrictEqual(owners, [['user', 'user-1'], ['lambda', 'lambda-2'], ['app', 'app-1']]);
+  });
+
+  it("tells a lambda who called it when it runs as the caller too", async function () {
+    this.timeout(10000);
+    const seen = await given(
+      { type: 'API_ENDPOINT', apiEndpoint: { url: 'x', useCallerToken: true } },
+      { _tokenId: 'caller-token', _callerTokenId: 'caller-token' },
+      'user',
+    );
+
+    assert.deepStrictEqual([seen.callerType, seen.callerId], ['user', 'user-1']);
+  });
+
+  it("gives a lambda who called it, never the token's id or value, when it doesn't run as the caller", async function () {
+    this.timeout(10000);
+    const seen = await given(
+      { type: 'API_ENDPOINT', apiEndpoint: { url: 'x', useCallerToken: false } },
+      { _callerTokenId: 'caller-token' },
+      'user',
+    );
+
+    assert.strictEqual(seen.hostCaller, null);
+    assert.strictEqual(seen.appToken, 'lambda-token');
+    const everything = JSON.stringify({ info: seen.info, execution: seen.execution });
+    assert.ok(!everything.includes('caller-token'));
+    assert.ok(!('_callerTokenId' in seen.execution));
+  });
+
+  it("has no caller to tell a lambda that wasn't called by a token of its app", async function () {
+    this.timeout(10000);
+    const seen = await given({ type: 'API_ENDPOINT', apiEndpoint: { url: 'x', useCallerToken: false } }, {});
+
+    assert.deepStrictEqual([seen.callerType, seen.callerId], [null, null]);
+  });
+
+  it("has no caller to tell a lambda when the token that called it has no owner of a type it knows", async function () {
+    this.timeout(10000);
+    const seen = await given(
+      { type: 'API_ENDPOINT', apiEndpoint: { url: 'x', useCallerToken: false } },
+      { _callerTokenId: 'caller-token' },
+      'system',
+    );
+
+    assert.deepStrictEqual([seen.callerType, seen.callerId], [null, null]);
+  });
+
+  it("still runs a lambda whose caller's token has been deleted since it was queued, with no caller to tell it", async function () {
+    this.timeout(10000);
+    const seen = await given(
+      { type: 'API_ENDPOINT', apiEndpoint: { url: 'x', useCallerToken: false } },
+      { _callerTokenId: 'deleted-token' },
+      'user',
+    );
+
+    assert.deepStrictEqual([seen.callerType, seen.callerId], [null, null]);
   });
 
   it("has no user to tell an endpoint that doesn't use the caller's token", async function () {
@@ -1728,5 +1884,253 @@ describe('lambda/LambdaRunner:execute isolate memory', () => {
     assert.ok(first.isDisposed);
     running[1]();
     await until(() => finished() === 2);
+  });
+});
+
+// One isolate runs every lambda, and an app's context is kept between its runs, so work a lambda leaves running when it
+// returns could otherwise go on into a later run and act for it: answer its caller, log into its execution, update its
+// lambda's metadata or call this instance with its caller's token.
+describe('lambda/LambdaRunner:execute runs kept apart', () => {
+  let savedPaths;
+  let savedAllowed;
+  let savedApp;
+  let tmpDir;
+  let server;
+
+  beforeEach(async () => {
+    savedPaths = { ...Config.paths.lambda };
+    savedAllowed = Config.lambda.allowedHosts;
+    savedApp = { protocol: Config.app.protocol, host: Config.app.host };
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'buttress-lambda-runs-'));
+    Config.paths.lambda.plugins = tmpDir;
+    Config.lambda.allowedHosts = '';
+    ['log', 'logDebug', 'logWarn', 'logError'].forEach((level) => sinon.stub(Logging, level));
+
+    // This Buttress instance, which records the requests it gets. /slow answers after 300 ms.
+    server = await new Promise((resolve) => {
+      const requests = [];
+      const instance = http.createServer((req, res) => {
+        const request = { url: req.url, authorization: req.headers.authorization, closedEarly: false };
+        requests.push(request);
+        res.on('close', () => (request.closedEarly = !res.writableEnded));
+        setTimeout(() => res.end('{}'), req.url === '/slow' ? 300 : 0);
+      });
+      instance.listen(0, '127.0.0.1', () => resolve({ instance, requests, port: instance.address().port }));
+    });
+    Config.app.protocol = 'http';
+    Config.app.host = `127.0.0.1:${server.port}`;
+  });
+
+  afterEach(() => {
+    Object.assign(Config.paths.lambda, savedPaths);
+    Config.lambda.allowedHosts = savedAllowed;
+    Object.assign(Config.app, savedApp);
+    server.instance.closeAllConnections();
+    server.instance.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  // A runner whose lambdas' entry points are the bodies they're run with, in its real isolate. run() gives what the API
+  // caller was answered and the logs saved with the execution.
+  async function createRunsRunner() {
+    const { runner, nrp } = createRunner();
+    await runner.init();
+    const executionUpdates = sinon.stub().resolves();
+    const lambdaUpdates = sinon.stub().resolves();
+    const callerToken = { id: 'caller-token', value: 'caller-token-value', type: 'app', _appId: 'app-b' };
+    stubModel(
+      new Map([
+        [SecureStoreSchemaModel, { findOne: async () => null }],
+        [AppSchemaModel, { createId: (v) => v }],
+        [LambdaSchemaModel, { createId: (v) => v, updateById: lambdaUpdates }],
+        [TokenSchemaModel, {
+          createId: (v) => v,
+          find: async (query) => Readable.from([query._id ? callerToken : { value: 'lambda-token' }]),
+          findById: async () => null,
+        }],
+        [LambdaExecutionSchemaModel, {
+          ...fakeExecutionModel({ updateById: executionUpdates }),
+          findById: async (id) => ({ id, status: 'RUNNING', metadata: [] }),
+        }],
+      ]),
+    );
+    sinon.stub(runner, 'bundleLambdaModules').resolves();
+    sinon.stub(runner, '_getLambdaModulesName').callsFake((lambda) => [{ name: `lambda_${lambda.id}` }]);
+    let body = '';
+    sinon.stub(runner, '_registerLambdaModules').callsFake(async ([mod]) => {
+      runner._context.evalSync(`
+        globalThis.Buttress = { clean() {}, initialised: false, init: async () => {} };
+        globalThis['${mod.name}'] = class { async execute() { ${body} } };
+      `);
+    });
+
+    let runs = 0;
+    const run = async ({ lambdaId, appId, lambdaBody, trigger = [], execution = {} }) => {
+      body = lambdaBody;
+      nrp.emit.resetHistory();
+      const lambda = {
+        id: lambdaId, name: lambdaId, trigger,
+        git: { url: 'git@example.com:x.git', hash: 'HEAD', entryFile: 'index.js', entryPoint: 'execute' },
+      };
+      const exec = { id: `exec-${++runs}`, lambdaId, deploymentId: 'd', metadata: [], ...execution };
+      await runner.execute(lambda, exec, { id: appId, apiPath: appId }, 'API_ENDPOINT', { reqId: `req-${runs}` });
+      const resultCall = nrp.emit.getCalls().find((call) => call.args[0] === 'lambda:worker:execution-result');
+      const completed = executionUpdates.getCalls().find((call) => call.args[0] === exec.id && call.args[1].$push);
+      return { res: JSON.parse(resultCall.args[1]).res, logs: completed.args[1].$push.logs.$each };
+    };
+    return { runner, run, lambdaUpdates };
+  }
+
+  // Work a lambda leaves running when it returns, which acts 50 ms later
+  const leftBehind = `
+    sleep(50).then(() => {
+      lambda.setResult({ by: 'the first run' });
+      lambda.log('logged by the first run');
+      updateMetadata({ idx: -1, key: 'by', value: 'the first run' });
+      fetch({ url: buttressOptions.buttressUrl + '/x', options: { headers: { Authorization: 'Bearer BUTTRESS_CALLER' } } });
+    });
+  `;
+  const laterRun = "await sleep(200); lambda.log('logged by the second run');";
+
+  for (const [name, first, second] of [
+    ["another app's", { lambdaId: 'la', appId: 'app-a' }, { lambdaId: 'lb', appId: 'app-b' }],
+    ["the same app's", { lambdaId: 'lb', appId: 'app-b' }, { lambdaId: 'lb', appId: 'app-b' }],
+  ]) {
+    it(`doesn't let work ${name} last run left running act for the next`, async function () {
+      this.timeout(10000);
+      const { runner, run, lambdaUpdates } = await createRunsRunner();
+
+      try {
+        await run({ ...first, lambdaBody: leftBehind });
+        const later = await run({
+          ...second,
+          lambdaBody: laterRun,
+          trigger: [{ type: 'API_ENDPOINT', apiEndpoint: { url: 'x', useCallerToken: true } }],
+          execution: { _tokenId: 'caller-token' },
+        });
+
+        assert.strictEqual(later.res, 'success');
+        assert.deepStrictEqual(later.logs, [{ log: 'logged by the second run', type: 'log' }]);
+        assert.ok(!lambdaUpdates.calledWith('lb'), "the first run's work shouldn't update the second lambda's metadata");
+        assert.deepStrictEqual(server.requests, []);
+      } finally {
+        runner._isolate.dispose();
+      }
+    });
+  }
+
+  // SR-DPC-001 R13: a value that refers to an object many times over unfolds to 2^60 leaves written out
+  describe('values a lambda gives the host that it could never write out', () => {
+    const shared = 'let n = {}; for (let i = 0; i < 60; i++) n = { a: n, b: n };';
+
+    it('fails the run that gives one as its result, at once', async function () {
+      this.timeout(10000);
+      const { runner, run } = await createRunsRunner();
+
+      try {
+        const started = Date.now();
+        await assert.rejects(
+          run({ lambdaId: 'la', appId: 'app-a', lambdaBody: `${shared} lambda.setResult({ n });` }),
+          /lambda result refused: The value would take more than 128 MB written out/,
+        );
+        assert.ok(Date.now() - started < 3000, `took ${Date.now() - started} ms`);
+      } finally {
+        runner._isolate.dispose();
+      }
+    });
+
+    it('fails the run whose result refers to itself, saying so', async function () {
+      this.timeout(10000);
+      const { runner, run } = await createRunsRunner();
+
+      try {
+        await assert.rejects(
+          run({ lambdaId: 'la', appId: 'app-a', lambdaBody: 'const r = {}; r.r = r; lambda.setResult(r);' }),
+          /lambda result refused: The value refers to itself/,
+        );
+      } finally {
+        runner._isolate.dispose();
+      }
+    });
+
+    it('logs a note in place of one it logs', async function () {
+      this.timeout(10000);
+      const { runner, run } = await createRunsRunner();
+
+      try {
+        const result = await run({ lambdaId: 'la', appId: 'app-a', lambdaBody: `${shared} lambda.log(n);` });
+
+        assert.strictEqual(result.res, 'success');
+        assert.deepStrictEqual(result.logs, [{ log: '[more than 128 MB left out]', type: 'log' }]);
+      } finally {
+        runner._isolate.dispose();
+      }
+    });
+
+    it('refuses one given to a host function, which the lambda can catch', async function () {
+      this.timeout(10000);
+      const { runner, run } = await createRunsRunner();
+
+      try {
+        const result = await run({
+          lambdaId: 'la', appId: 'app-a',
+          lambdaBody: `${shared}
+            const outcome = await fetch({ url: buttressOptions.buttressUrl + '/x', options: { body: n } })
+              .then(() => 'sent', (err) => String(err && err.message));
+            lambda.setResult({ outcome });`,
+        });
+
+        assert.match(result.res.outcome, /would take more than 128 MB/);
+        assert.deepStrictEqual(server.requests, []);
+      } finally {
+        runner._isolate.dispose();
+      }
+    });
+  });
+
+  // SR-DPC-001 R11: it was parsed before the error handling, so the lambda's fetch never settled and the run timed out
+  it("rejects a fetch of a url that isn't one at once, which the lambda can catch", async function () {
+    this.timeout(15000);
+    const { runner, run } = await createRunsRunner();
+
+    try {
+      const started = Date.now();
+      const result = await run({
+        lambdaId: 'la', appId: 'app-a',
+        lambdaBody: `
+          const outcomes = [];
+          for (const request of ['not a url', { url: 'x' }, null, {}, { url: 42 }]) {
+            outcomes.push(await fetch(request).then(() => 'sent', (err) => [err && err.message, err && err.code]));
+          }
+          lambda.setResult({ outcomes });`,
+      });
+
+      assert.deepStrictEqual(result.res.outcomes, Array(5).fill(['fetch_invalid_url', 400]));
+      assert.ok(Date.now() - started < 3000, `took ${Date.now() - started} ms`);
+      assert.deepStrictEqual(server.requests, []);
+    } finally {
+      runner._isolate.dispose();
+    }
+  });
+
+  it('aborts a request a lambda leaves running when it returns, rather than answer the next run with it', async function () {
+    this.timeout(10000);
+    const { runner, run } = await createRunsRunner();
+
+    try {
+      await run({
+        lambdaId: 'la', appId: 'app-a',
+        // Returns once the request has reached the instance, which is still answering it
+        lambdaBody: "fetch(buttressOptions.buttressUrl + '/slow').then(() => lambda.setResult({ by: 'app-a' })); await sleep(100);",
+      });
+      const later = await run({ lambdaId: 'la', appId: 'app-a', lambdaBody: 'await sleep(500);' });
+
+      assert.strictEqual(later.res, 'success');
+      assert.deepStrictEqual(server.requests.map(({ url, closedEarly }) => ({ url, closedEarly })), [
+        { url: '/slow', closedEarly: true },
+      ]);
+    } finally {
+      runner._isolate.dispose();
+    }
   });
 });

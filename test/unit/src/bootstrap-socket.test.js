@@ -18,6 +18,9 @@ import { describe, it, beforeEach, afterEach } from 'mocha';
 import assert from 'assert';
 import sinon from 'sinon';
 import { ObjectId } from 'bson';
+import http from 'node:http';
+import { Server } from 'socket.io';
+import { createAdapter } from '@socket.io/redis-adapter';
 
 import BootstrapSocket, { relayedDataShareActivity } from '../../../dist/bootstrap-socket.js';
 import Logging from '../../../dist/helpers/logging.js';
@@ -26,6 +29,7 @@ import TokenSchemaModel from '../../../dist/model/core/token.js';
 import AppSchemaModel from '../../../dist/model/core/app.js';
 import AppDataSharingSchemaModel from '../../../dist/model/core/app-data-sharing.js';
 import RemoteCombinedModel from '../../../dist/model/type/remote-combined.js';
+import Datastore from '../../../dist/datastore/index.js';
 
 describe('bootstrap-socket:token authentication', () => {
   const app = { id: new ObjectId(), apiPath: 'app-one' };
@@ -402,6 +406,87 @@ describe('bootstrap-socket: connected sockets', () => {
   });
 });
 
+// SR-DPC-001 R14
+describe('bootstrap-socket: request status subscriptions', () => {
+  const app = { id: new ObjectId(), apiPath: 'app-one' };
+  const token = { id: new ObjectId(), value: 'app-one-token', type: 'app', _appId: app.id };
+  const requestId = (n) => new ObjectId().toString().slice(0, 18) + String(n).padStart(6, '0');
+
+  afterEach(() => sinon.restore());
+
+  // A socket connected to /app-one, with the handlers it was given and what it was sent
+  async function connect(bootstrap, socketId = 'socket-1') {
+    const handlers = {};
+    const socket = { id: socketId, nsp: { name: '/app-one' }, handshake: { auth: { token: token.value }, query: {} }, data: {} };
+    socket.join = () => {};
+    socket.on = (event, handler) => (handlers[event] = handler);
+    socket.emit = sinon.spy();
+    await bootstrap._workerHandleSocketConnection(socket, () => {});
+    return { socket, handlers };
+  }
+
+  function createBootstrap() {
+    sinon.stub(Model, 'getCoreModel').callsFake((modelClass) => {
+      if (modelClass === TokenSchemaModel) return { findOne: async () => token };
+      if (modelClass === AppSchemaModel) return { findOne: async () => app };
+      throw new Error(`Unexpected core model ${modelClass.name}`);
+    });
+    const bootstrap = new BootstrapSocket();
+    bootstrap.__nrp = { emit: sinon.spy() };
+    return bootstrap;
+  }
+
+  it('refuses an id that is not text, which would never be looked up again', async () => {
+    const bootstrap = createBootstrap();
+    const { socket, handlers } = await connect(bootstrap);
+
+    for (const data of [{ id: { a: 1 } }, { id: ['x'] }, { id: 42 }, { id: '' }, { id: 'x'.repeat(65) }, {}, null]) {
+      handlers['bjs-request-subscribe'](data);
+    }
+
+    assert.strictEqual(bootstrap._requestSockets.size, 0);
+    assert.ok(socket.emit.notCalled);
+  });
+
+  it("removes a socket's subscriptions when it disconnects, and no other socket's", async () => {
+    const bootstrap = createBootstrap();
+    const one = await connect(bootstrap, 'socket-1');
+    const two = await connect(bootstrap, 'socket-2');
+    one.handlers['bjs-request-subscribe']({ id: requestId(1) });
+    two.handlers['bjs-request-subscribe']({ id: requestId(2) });
+
+    one.handlers.disconnect();
+
+    assert.strictEqual(bootstrap._requestSockets.get(requestId(1)), undefined);
+    assert.strictEqual(bootstrap._requestSockets.get(requestId(2)), two.socket);
+  });
+
+  it('holds no more than 100 subscriptions for one socket, counting only those still its own', async () => {
+    const bootstrap = createBootstrap();
+    const { handlers } = await connect(bootstrap);
+    for (let n = 0; n < 101; n++) handlers['bjs-request-subscribe']({ id: requestId(n) });
+
+    assert.strictEqual(bootstrap._requestSockets.size, 100);
+
+    // One ends, so another can be subscribed to
+    bootstrap._requestSockets.delete(requestId(0));
+    handlers['bjs-request-subscribe']({ id: requestId(200) });
+    assert.ok(bootstrap._requestSockets.get(requestId(200)));
+  });
+
+  it('sweeps out subscriptions once they expire, though nothing looks them up', async () => {
+    const clock = sinon.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    const bootstrap = createBootstrap();
+    const { handlers } = await connect(bootstrap);
+    handlers['bjs-request-subscribe']({ id: requestId(1) });
+
+    await clock.tickAsync(10 * 60 * 1000 + 1);
+
+    assert.strictEqual(bootstrap._requestSockets.size, 0);
+    bootstrap._requestSockets.destroy();
+  });
+});
+
 describe('bootstrap-socket: a partner whose agreement is not active', () => {
   const app = { id: new ObjectId(), apiPath: 'app-one', __schema: '[]' };
   const token = { id: new ObjectId(), value: 'partner-token', type: 'dataSharing', _appId: app.id };
@@ -526,3 +611,42 @@ describe("bootstrap-socket: relaying a partner's activity", () => {
   });
 });
 
+
+// SR-DPC-001 R10
+describe('bootstrap-socket: stopping', () => {
+  afterEach(() => sinon.restore());
+
+  it("closes this process's own sockets on every namespace, without telling every Socket process to", async () => {
+    sinon.stub(Model, 'clean').resolves();
+    sinon.stub(Datastore, 'clean').resolves();
+
+    // What socket.io's redis adapter publishes, which every Socket process on the Redis acts on
+    const published = [];
+    const redis = {
+      publish: async (channel, message) => published.push([channel, String(message)]),
+      pSubscribe: () => {},
+      subscribe: () => {},
+      pUnsubscribe: () => {},
+      unsubscribe: () => {},
+      on: () => {},
+      off: () => {},
+    };
+    const io = new Server(http.createServer());
+    io.adapter(createAdapter(redis, redis));
+
+    const closed = [];
+    for (const name of ['/', '/app-one']) {
+      const namespace = io.of(name);
+      const id = `${name} socket`;
+      namespace.sockets.set(id, { id, _onclose: () => closed.push(name), disconnect: () => closed.push(name) });
+      namespace.adapter.addAll(id, new Set([id]));
+    }
+
+    const bootstrap = new BootstrapSocket();
+    bootstrap.io = io;
+    await bootstrap.clean();
+
+    assert.deepStrictEqual(published, []);
+    assert.deepStrictEqual(closed, ['/', '/app-one']);
+  });
+});

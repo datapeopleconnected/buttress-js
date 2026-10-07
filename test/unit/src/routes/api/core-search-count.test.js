@@ -107,6 +107,11 @@ describe('routes/api: core searches and counts', () => {
         await assert.rejects(search(searchName, appReq({ limit: 'many' })), { status: 400, code: 'invalid_value_limit' });
       });
 
+      it('refuses a negative skip or limit', async () => {
+        await assert.rejects(search(searchName, appReq({ skip: -1 })), { status: 400, code: 'invalid_value_skip' });
+        await assert.rejects(search(searchName, appReq({ limit: '-1' })), { status: 400, code: 'invalid_value_limit' });
+      });
+
       it("counts the app's rows its query matches, a body without a query being the query", async () => {
         assert.strictEqual(await count(countName, appReq({ query: { id: { $ne: id(1) } } })), 2);
         assert.strictEqual(await count(countName, appReq({ id: { $ne: id(1) } })), 2);

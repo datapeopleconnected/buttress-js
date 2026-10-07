@@ -19,7 +19,7 @@ import assert from 'assert';
 
 import AccessControlProjection from '../../../../dist/access-control/projection.js';
 
-describe('access-control/projection:filterPoliciesByPolicyProjection', () => {
+describe('access-control/projection:filterGrantsByRequest', () => {
   const schema = {
     name: 'user',
     properties: {
@@ -36,7 +36,7 @@ describe('access-control/projection:filterPoliciesByPolicyProjection', () => {
     }];
 
     const req = { method: 'GET', body: { query: {} } };
-    const result = await AccessControlProjection.filterPoliciesByPolicyProjection(req, policies, schema);
+    const result = await AccessControlProjection.filterGrantsByRequest(req, policies, schema);
     assert.strictEqual(result.length, 1);
   });
 
@@ -49,7 +49,7 @@ describe('access-control/projection:filterPoliciesByPolicyProjection', () => {
     }];
 
     const req = { method: 'GET', body: { query: { name: { $eq: 'test' } } } };
-    const result = await AccessControlProjection.filterPoliciesByPolicyProjection(req, policies, schema);
+    const result = await AccessControlProjection.filterGrantsByRequest(req, policies, schema);
     assert.strictEqual(result.length, 1);
   });
 
@@ -62,8 +62,30 @@ describe('access-control/projection:filterPoliciesByPolicyProjection', () => {
     }];
 
     const req = { method: 'GET', body: { query: { email: { $eq: 'test@test.com' } } } };
-    const result = await AccessControlProjection.filterPoliciesByPolicyProjection(req, policies, schema);
+    const result = await AccessControlProjection.filterGrantsByRequest(req, policies, schema);
     assert.strictEqual(result.length, 0);
+  });
+
+  // The order of a read sorted by a property would show it, so a grant that hides a property doesn't let a read sorted by
+  // it through
+  it('should reject a read sorted by a key not in the projection', async () => {
+    const policies = [{
+      id: 'p1', name: 'test', appId: 'app1', env: null,
+      config: { verbs: ['SEARCH'], schema: ['user'], query: {}, projection: { keys: ['name'] }, condition: null },
+    }];
+
+    const req = { method: 'SEARCH', body: { query: {}, sort: { age: -1 } } };
+    assert.strictEqual((await AccessControlProjection.filterGrantsByRequest(req, policies, schema)).length, 0);
+  });
+
+  it('should pass a read sorted by projected keys, or by id', async () => {
+    const policies = [{
+      id: 'p1', name: 'test', appId: 'app1', env: null,
+      config: { verbs: ['SEARCH'], schema: ['user'], query: {}, projection: { keys: ['name'] }, condition: null },
+    }];
+
+    const req = { method: 'SEARCH', body: { query: {}, sort: { name: 1, id: -1 } } };
+    assert.strictEqual((await AccessControlProjection.filterGrantsByRequest(req, policies, schema)).length, 1);
   });
 
   it('should pass POST when body keys are within projection', async () => {
@@ -75,7 +97,7 @@ describe('access-control/projection:filterPoliciesByPolicyProjection', () => {
     }];
 
     const req = { method: 'POST', body: { name: 'Test', email: 'test@test.com' } };
-    const result = await AccessControlProjection.filterPoliciesByPolicyProjection(req, policies, schema);
+    const result = await AccessControlProjection.filterGrantsByRequest(req, policies, schema);
     assert.strictEqual(result.length, 1);
   });
 
@@ -90,7 +112,7 @@ describe('access-control/projection:filterPoliciesByPolicyProjection', () => {
     const req = { method: 'PUT', body: [{ path: 'email' }] };
 
     await assert.rejects(
-      () => AccessControlProjection.filterPoliciesByPolicyProjection(req, policies, schema),
+      () => AccessControlProjection.filterGrantsByRequest(req, policies, schema),
       /Can not access\/edit properties/,
     );
   });
@@ -105,14 +127,14 @@ describe('access-control/projection:filterPoliciesByPolicyProjection', () => {
 
     for (const path of ['nameSecret', 'addressHistory', 'address_street']) {
       await assert.rejects(
-        () => AccessControlProjection.filterPoliciesByPolicyProjection({ method: 'PUT', body: [{ path }] }, policies, schema),
+        () => AccessControlProjection.filterGrantsByRequest({ method: 'PUT', body: [{ path }] }, policies, schema),
         /Can not access\/edit properties/,
         path,
       );
     }
 
     const req = { method: 'PUT', body: [{ path: 'name' }, { path: 'address.street' }] };
-    assert.strictEqual((await AccessControlProjection.filterPoliciesByPolicyProjection(req, policies, schema)).length, 1);
+    assert.strictEqual((await AccessControlProjection.filterGrantsByRequest(req, policies, schema)).length, 1);
   });
 
   it('should pass PUT when update path is in projection', async () => {
@@ -124,7 +146,7 @@ describe('access-control/projection:filterPoliciesByPolicyProjection', () => {
     }];
 
     const req = { method: 'PUT', body: [{ path: 'name' }] };
-    const result = await AccessControlProjection.filterPoliciesByPolicyProjection(req, policies, schema);
+    const result = await AccessControlProjection.filterGrantsByRequest(req, policies, schema);
     assert.strictEqual(result.length, 1);
   });
 
@@ -135,11 +157,26 @@ describe('access-control/projection:filterPoliciesByPolicyProjection', () => {
     }];
 
     const req = { method: 'GET', body: { query: { anything: { $eq: 'value' } } } };
-    const result = await AccessControlProjection.filterPoliciesByPolicyProjection(req, policies, schema);
+    const result = await AccessControlProjection.filterGrantsByRequest(req, policies, schema);
     assert.strictEqual(result.length, 1);
   });
 
-  it('should set projection keys to 1 in the result', async () => {
+  // A query a partner is sent nests the grants' $or in an $and with the request's
+  it('checks the fields of a read query at any depth of $and, $or and $nor', async () => {
+    const grants = [{
+      id: 'p1', name: 'test', appId: 'app1', env: null,
+      config: { verbs: ['SEARCH'], schema: ['user'], query: {}, projection: { keys: ['name', 'email'] }, condition: null },
+    }];
+    const search = async (query) =>
+      (await AccessControlProjection.filterGrantsByRequest({ method: 'SEARCH', body: { query } }, grants, schema)).length;
+
+    assert.strictEqual(await search({ $and: [{ name: { $eq: 'a' } }, { $or: [{ email: { $eq: 'b' } }, { name: 'c' }] }] }), 1);
+    assert.strictEqual(await search({ $nor: [{ $and: [{ email: { $eq: 'b' } }] }] }), 1);
+    assert.strictEqual(await search({ $and: [{ name: { $eq: 'a' } }, { $or: [{ age: { $gt: 1 } }] }] }), 0);
+    assert.strictEqual(await search({ $nor: [{ age: { $gt: 1 } }] }), 0);
+  });
+
+  it('passes a grant it lets through on as it is', async () => {
     const policies = [{
       id: 'p1', name: 'test', appId: 'app1', env: null,
       config: {
@@ -148,8 +185,9 @@ describe('access-control/projection:filterPoliciesByPolicyProjection', () => {
     }];
 
     const req = { method: 'GET', body: { query: { name: { $eq: 'test' } } } };
-    const result = await AccessControlProjection.filterPoliciesByPolicyProjection(req, policies, schema);
-    assert.deepStrictEqual(result[0].config.projection, { name: 1, email: 1 });
+    const result = await AccessControlProjection.filterGrantsByRequest(req, policies, schema);
+    assert.strictEqual(result[0], policies[0]);
+    assert.deepStrictEqual(result[0].config.projection, { keys: ['name', 'email'] });
   });
 
   it('should handle logical operators in GET query ($and/$or)', async () => {
@@ -168,7 +206,7 @@ describe('access-control/projection:filterPoliciesByPolicyProjection', () => {
         },
       },
     };
-    const result = await AccessControlProjection.filterPoliciesByPolicyProjection(req, policies, schema);
+    const result = await AccessControlProjection.filterGrantsByRequest(req, policies, schema);
     assert.strictEqual(result.length, 1);
   });
 
@@ -188,7 +226,7 @@ describe('access-control/projection:filterPoliciesByPolicyProjection', () => {
         },
       },
     };
-    const result = await AccessControlProjection.filterPoliciesByPolicyProjection(req, policies, schema);
+    const result = await AccessControlProjection.filterGrantsByRequest(req, policies, schema);
     assert.strictEqual(result.length, 0);
   });
 });
@@ -211,7 +249,7 @@ describe('access-control/projection: writes limited by a policy projection', () 
     config: { verbs, schema: ['user'], query: {}, projection: { keys }, condition: null },
   }];
   const apply = (keys, body) =>
-    AccessControlProjection.filterPoliciesByPolicyProjection({ method: 'POST', body }, policies(keys), schema);
+    AccessControlProjection.filterGrantsByRequest({ method: 'POST', body }, policies(keys), schema);
 
   it('refuses a bulk update of a property outside the projection', async () => {
     for (const body of [

@@ -35,8 +35,12 @@ export interface PolicyEnv {
   [key: string]: string | PolicyEnvQuery;
 }
 
+// The criteria a policy property's value must pass, `{<@op>: <operand>}`
+export type PolicyCriteria = Record<string, unknown>;
+
+// Each key a policy property and its criteria, or `@and`/`@or` and a list of selections (see AccessControlPolicyMatch)
 export interface PolicySelection {
-  [key: string]: { [key: string]: string };
+  [key: string]: PolicyCriteria | PolicySelection[];
 }
 
 export interface PolicyQuery {
@@ -71,6 +75,8 @@ export type Policy = {
   env: PolicyEnv | null;
   config: PolicyConfig[];
   limit: Date | null;
+  // A transient policy's limit also takes the policy property named after it off the tokens it selected (PolicyExpiry)
+  transient: boolean;
   _appId: string;
 };
 
@@ -83,6 +89,7 @@ export type PolicyAddBody = {
   env?: PolicyEnv | null;
   config?: Partial<PolicyConfig>[];
   limit?: string | number | Date | null;
+  transient?: boolean;
   version?: string | null;
 };
 
@@ -192,6 +199,12 @@ class PolicySchemaModel extends StandardModel<Policy> {
           __required: false,
           __allowUpdate: true,
         },
+        transient: {
+          __type: 'boolean',
+          __default: false,
+          __required: false,
+          __allowUpdate: true,
+        },
         _appId: {
           __type: 'id',
           __required: true,
@@ -231,8 +244,8 @@ class PolicySchemaModel extends StandardModel<Policy> {
 
     return result;
   }
-  override async updateByPath(body: UpdatePathBody | UpdatePathBody[], id: string, sourceId: string | null = null) {
-    const policy = await super.updateByPath(body, id, sourceId);
+  override async updateByPath(body: UpdatePathBody | UpdatePathBody[], id: string, via: string | null = null) {
+    const policy = await super.updateByPath(body, id, via);
 
     await this.__policyCache.invalidatePolicyAndTokensBySelection(id.toString());
 

@@ -499,8 +499,9 @@ export default class LambdaModel extends StandardModel<Lambda> {
       } else {
         const checkoutDir = `${Config.paths.lambda.code}/${lambdaFolderName}`;
         await Git.git(['fetch'], checkoutDir);
-        const checkoutRes = await Git.git(['checkout', branch as string], checkoutDir);
-        if (!checkoutRes.stdout) {
+        // The branch is looked up rather than read from what checkout prints, which is only its tracking, if it has any
+        const onOrigin = await Git.hasRef(`refs/remotes/origin/${branch}`, checkoutDir);
+        if (!onOrigin && !(await Git.hasRef(`refs/heads/${branch}`, checkoutDir))) {
           Logging.log(`[${LambdaModel.name}] Lambda ${branch} does not exist`);
           return Promise.reject(
             Helpers.Errors.badRequest('branch_not_found', `The lambda's repository has no branch ${branch}`, {
@@ -509,7 +510,9 @@ export default class LambdaModel extends StandardModel<Lambda> {
           );
         }
 
-        await Git.git(['pull'], checkoutDir);
+        await Git.git(['checkout', branch as string], checkoutDir);
+        // Pulled from origin by name, as the branch may not track it. A branch only in the checkout has nothing to pull.
+        if (onOrigin) await Git.git(['pull', 'origin', branch as string], checkoutDir);
         const results = await Git.git(['branch', branch as string, '--contains', gitHash as string], checkoutDir);
         if (!results.stdout) {
           Logging.log(`[${LambdaModel.name}] Lambda hash:${gitHash} does not exist on ${branch} branch`);

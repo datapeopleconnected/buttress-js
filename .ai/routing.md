@@ -57,12 +57,16 @@ Every concrete route (core API routes, schema CRUD routes, plugin routes) extend
 `_validate(req, res)` + `_exec(req, res, validate)`. `Route.exec()` is the fixed pipeline all of them
 share:
 
+0. `_checkQueryMethod()` — only on a `QUERY` route: sets `Accept-Query`, refuses a `QUERY` without a JSON
+   `Content-Type` with a 415 `unsupported_query_type` (RFC 10008 §2), and marks a `SEARCH` with a
+   `Deprecation` header.
 1. `_authenticate()` — checks `req.context.token` exists and its `type` meets `this.authType`.
    Authority is ranked by array position in `Constants.Type` (`AuthTypeOrder = Object.values(Constants.Type)`
    = `[user, dataSharing, lambda, app, system]`), so `system` outranks `app` outranks `lambda` outranks
    `dataSharing` outranks `user` — a route with `authType = Constants.Type.USER` (the default) accepts
-   any token type. There are separate `app`/`dataSharing` branches after this check that currently just
-   `resolve()` with no extra logic (marked `// NOT GOOD` in source for the `dataSharing` case) — don't
+   any token type. A route whose `authType` isn't one of those refuses every request with 500 `internal_error`
+   (`isKnownAuthType`), and `Routes` logs it as the route is set up. There are separate `app`/`dataSharing`
+   branches after this check that currently just `resolve()` with no extra logic (marked `// NOT GOOD` in source for the `dataSharing` case) — don't
    assume they enforce anything beyond the authority check above.
 2. `_validate(req, res)` then `_exec(req, res, validate)` — the only two methods subclasses must implement.
 3. `_respond()` — if `_exec` returned a `Stream.Readable`, pipes it through `JSONStringifyStream` (with
@@ -75,16 +79,21 @@ share:
    status, or destroys the socket if the response has started. Anything that pipes or merges find streams
    (the adapters, `models-access.find`) must pass errors on too: use `Stream.pipeline()`, or destroy the
    output with the error.
-4. `_logActivity()` — fire-and-forget `ActivitySchemaModel.add()` for non-GET/SEARCH verbs, if
+4. `_logActivity()` — fire-and-forget `ActivitySchemaModel.add()` for verbs that aren't reads (`isReadVerb()`), if
    `this.activity` (default `true`).
-5. `_boardcastData()` — for non-GET/SEARCH verbs: emits `rest:activity` twice (once as a "super"
+5. `_boardcastData()` — for verbs that aren't reads: emits `rest:activity` twice (once as a "super"
    broadcast, once as a normal one — see `_broadcast(req, res, result, path, isSuper)`), only if
    `this.activityBroadcast === true` (**opt-in per route**, default `false`); then calls
    `_checkBasedPathLambda()` to fire `rest:worker:notifyLambdaPathChange` if applicable (see
    [lambda-system.md](lambda-system.md)) — this happens regardless of `activityBroadcast`.
 
 Route flags a subclass typically sets: `verb`, `authType`, `permissions`, `activityBroadcast`,
-`activityTitle`/`activityDescription`, `redactResults`, `addSourceId`. Schema-generated routes call
+`activityTitle`/`activityDescription`, `redactResults`, `addSourceId`.
+
+**Searches are `Verbs.QUERY`** (RFC 10008), whose body is the query. `SEARCH`, the method's name in the drafts,
+is deprecated but still answered: `routerMethods(verb)` registers a `QUERY` (or `SEARCH`) route for both
+methods, in `_initRoute`/`_initSchemaRoutes`. The route names
+(`SEARCH CAR LIST`) and `Permissions.SEARCH` are labels and token permissions, not methods, and stay. Schema-generated routes call
 `__configureSchemaRoute()` which sets `core = false`, `redactResults = true`, `addSourceId = true`.
 
 **Core collections are shared by every app**, so a core route reaches them through
@@ -123,13 +132,15 @@ test has it too).
 - A search takes `{query, skip, limit, sort, project}`, as a schema search does, and refuses a list body with 400
   `invalid_body`; a count takes `{query}` or the body as its query, without `actualCount`.
 - An update by path (`PUT <path>/:id`) and a bulk update (`POST <path>/bulk/update`, `[{id, body}]`) check each row's
-  updates with `validateUpdate` (400 `invalid_update`), then the route's `updateProblem` hook (policy configs,
-  data-sharing destinations), then that the rows are ones the caller reaches (`assertExists`, or for a bulk update
+  updates with `validateUpdate` (400 `invalid_update`), then the route's `updateProblem(req, updates, id)` hook (policy
+  configs, data-sharing destinations), given every update the request makes to the row, from each bulk item that names
+  it, in the order they're written; then that the rows are ones the caller reaches (`assertExists`, or for a bulk update
   `assertAllExist`, one `$in` query naming the first missing id), before anything is written; `afterUpdates` then gets every row written (lambda pulls code and rebuilds the path-mutation cache once).
 - A get-one is `findByIdOrFail` (404 `not_found`, 400 `invalid_id`), its `present(row)` hook giving what's sent
   (activity sends its `body`); a get-list lists the rows the caller reaches, only those `?ids=a,b` names where the
   route `takesIds` (policy, lambda; D-29); a delete-all is `rmAll` over them.
-- A policy-property route (`set`, `update`, `remove` or `clear`, its `policyProperties`) checks the row exists, finds
+- A policy-property route (`set`, `update`, `remove` or `clear`, its `policyProperties`) refuses a body that isn't an
+  object, but for `clear`, with 400 `invalid_body`, checks the row exists, finds
   its token with the owner's `findToken` (a lambda's by `_lambdaId`, a user's by `:tokenId`, id or value), checks
   set or merged properties against the app's list (400 `invalid_field`), then changes the token; `afterChange`
   follows (a user's sockets look at its rooms again after a remove or clear).

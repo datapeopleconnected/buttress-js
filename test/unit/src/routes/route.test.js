@@ -19,7 +19,7 @@ import assert from 'assert';
 import sinon from 'sinon';
 import { Readable, PassThrough } from 'node:stream';
 
-import Route from '../../../../dist/routes/route.js';
+import Route, { routerMethods } from '../../../../dist/routes/route.js';
 import Logging from '../../../../dist/helpers/logging.js';
 import Model from '../../../../dist/model/index.js';
 import ActivitySchemaModel from '../../../../dist/model/core/activity.js';
@@ -128,6 +128,36 @@ describe('routes/Route:_respond private properties', () => {
     });
   }
 
+  // SR-DPC-001 S18
+  it('leaves a `_` property holding a list out of a result', async () => {
+    const route = createRoute({ schema });
+    route.addSourceId = false;
+    const res = createRes();
+
+    await route._respond(createReq(), res, { ...stored(), _b: [1, 2] });
+
+    assert.deepStrictEqual(res.json.firstCall.args[0], { id: 'u1', name: 'a', auth: [{ app: 'google' }] });
+  });
+
+  // A PUT's result is its changes, which were answered with what they wrote to a private property
+  it("leaves an update's change to one out of its response, and takes one out of a change above it", async () => {
+    const route = createRoute({ schema });
+    route.verb = Route.Constants.Verbs.PUT;
+    route.redactResults = false;
+    const res = createRes();
+
+    await route._respond(createReq({ method: 'PUT' }), res, [
+      { type: 'scalar', path: 'name', value: 'b' },
+      { type: 'scalar', path: 'auth.0.password', value: 'secret' },
+      { type: 'vector-add', path: 'auth', value: { app: 'github', password: 'secret' } },
+    ]);
+
+    assert.deepStrictEqual(res.json.firstCall.args[0], [
+      { type: 'scalar', path: 'name', value: 'b' },
+      { type: 'vector-add', path: 'auth', value: { app: 'github' } },
+    ]);
+  });
+
   it('leaves them out of each entity of a stream', async () => {
     const route = createRoute({ schema });
     route.addSourceId = false;
@@ -234,6 +264,26 @@ describe('routes/Route:_authenticate', () => {
     );
   });
 
+  // An unknown auth type would rank below every token type, letting every token through (SR-DPC-001 S12)
+  for (const [label, authType] of [
+    ['an unknown auth type', 'admin'],
+    ['no auth type', undefined],
+    ['an empty auth type', ''],
+  ]) {
+    it(`refuses every token on a route with ${label}`, async () => {
+      const route = createRoute();
+      route.authType = authType;
+
+      for (const type of Object.values(Route.Constants.Type)) {
+        await assert.rejects(
+          () => route._authenticate(createReq({ token: { type } }), createRes()),
+          (err) => err.status === 500 && err.code === 'internal_error',
+          type,
+        );
+      }
+    });
+  }
+
   it('resolves for an app token, bypassing schema checks', async () => {
     const route = createRoute();
     const req = createReq({ token: { type: 'app' } });
@@ -339,15 +389,17 @@ describe('routes/Route:_logActivity', () => {
     assert.strictEqual(addLog.called, false);
   });
 
-  it('skips logging activity for SEARCH requests', () => {
-    const route = createRoute();
-    route.verb = Route.Constants.Verbs.SEARCH;
-    const addLog = sinon.stub(route, '_addLogActivity');
+  for (const verb of ['QUERY', 'SEARCH']) {
+    it(`skips logging activity for ${verb} requests`, () => {
+      const route = createRoute();
+      route.verb = Route.Constants.Verbs[verb];
+      const addLog = sinon.stub(route, '_addLogActivity');
 
-    route._logActivity(createReq(), createRes());
+      route._logActivity(createReq(), createRes());
 
-    assert.strictEqual(addLog.called, false);
-  });
+      assert.strictEqual(addLog.called, false);
+    });
+  }
 
   it('logs activity for mutating verbs when activity tracking is enabled', () => {
     const route = createRoute();
@@ -431,6 +483,20 @@ describe('routes/Route:_boardcastData', () => {
 });
 
 describe('routes/Route:_broadcast', () => {
+  // SR-DPC-001 S18: a `_` list was sent as a list of nulls, its name and length showing
+  it('leaves `_` properties out of what it emits, lists included', () => {
+    const nrp = createNrpFake();
+    const route = createRoute({ nrp });
+    route.activityBroadcast = true;
+    route.verb = Route.Constants.Verbs.POST;
+
+    route._broadcast(createReq(), createRes(), { id: 'u1', name: 'test', _b: [1, 2] }, '/user', true);
+
+    const { response } = JSON.parse(nrp.emit.firstCall.args[1]);
+    assert.strictEqual('_b' in response, false);
+    assert.strictEqual(response.name, 'test');
+  });
+
   it('emits rest:activity when activityBroadcast is enabled', () => {
     const nrp = createNrpFake();
     const route = createRoute({ nrp });
@@ -444,6 +510,53 @@ describe('routes/Route:_broadcast', () => {
     const parsed = JSON.parse(payload);
     assert.strictEqual(parsed.path, '/user');
     assert.strictEqual(parsed.isSuper, true);
+  });
+
+  // SR-DPC-001 S4: realtime listeners are told of a result as a response would show it
+  describe('without the schema\'s private properties', () => {
+    const schema = {
+      name: 'user',
+      properties: {
+        name: { __type: 'string' },
+        auth: { __type: 'array', __schema: { app: { __type: 'string' }, password: { __type: 'string', __private: true } } },
+      },
+    };
+    const broadcastOf = (verb, result) => {
+      const nrp = createNrpFake();
+      const route = createRoute({ nrp, schema });
+      route.activityBroadcast = true;
+      route.verb = verb;
+      route._broadcast(createReq(), createRes(), result, '/user', true);
+      // Each result is marked with its source as it's prepared, which these don't look at
+      const strip = ({ sourceId: _sourceId, ...rest }) => rest;
+      const { response } = JSON.parse(nrp.emit.firstCall.args[1]);
+      return Array.isArray(response) ? response.map(strip) : strip(response);
+    };
+
+    it('leaves them out of an entity added', () => {
+      const added = { id: 'u1', name: 'Ann', auth: [{ app: 'google', password: 'secret' }] };
+
+      assert.deepStrictEqual(broadcastOf(Route.Constants.Verbs.POST, added), {
+        id: 'u1',
+        name: 'Ann',
+        auth: [{ app: 'google' }],
+      });
+    });
+
+    it("leaves out an update's change to one, and takes one out of a change above it", () => {
+      const changes = [
+        { type: 'scalar', path: 'name', value: 'Bea' },
+        { type: 'scalar', path: 'auth.0.password', value: 'secret' },
+        { type: 'vector-add', path: 'auth', value: { app: 'github', password: 'secret' } },
+        { type: 'scalar', path: 'auth.1', value: { app: 'gitlab', password: 'secret' } },
+      ];
+
+      assert.deepStrictEqual(broadcastOf(Route.Constants.Verbs.PUT, changes), [
+        { type: 'scalar', path: 'name', value: 'Bea' },
+        { type: 'vector-add', path: 'auth', value: { app: 'github' } },
+        { type: 'scalar', path: 'auth.1', value: { app: 'gitlab' } },
+      ]);
+    });
   });
 
   it('sends the entities a delete removed with the scoped activity only, for the SPR to check', () => {
@@ -461,6 +574,33 @@ describe('routes/Route:_broadcast', () => {
     assert.strictEqual('deletedEntities' in superActivity, false);
     assert.deepStrictEqual(scopedActivity.deletedEntities, [{ id: 'doc-1', ownerId: 'user-1' }]);
     assert.strictEqual(scopedActivity.response, true);
+  });
+
+  it('names the agreement a write to a partner\'s record went through, on both activities, for the SPR to find it', () => {
+    const nrp = createNrpFake();
+    const route = createRoute({ nrp });
+    route.activityBroadcast = true;
+    route.verb = Route.Constants.Verbs.PUT;
+    const req = createReq({ method: 'PUT', path: '/api/v1/car/car-1', params: { id: 'car-1' } });
+    req.context.dataShareId = 'agreement-1';
+
+    route._broadcast(req, createRes(), [{ type: 'scalar', path: 'name', value: 'x' }], '/car/car-1', true);
+    route._broadcast(req, createRes(), [{ type: 'scalar', path: 'name', value: 'x' }], '/car/car-1');
+
+    const activities = nrp.emit.getCalls().map((call) => JSON.parse(call.args[1]));
+    assert.deepStrictEqual(activities.map((activity) => activity.dataShareId), ['agreement-1', 'agreement-1']);
+  });
+
+  it("leaves the agreement off an activity for the app's own records", () => {
+    const nrp = createNrpFake();
+    const route = createRoute({ nrp });
+    route.activityBroadcast = true;
+    route.verb = Route.Constants.Verbs.POST;
+
+    route._broadcast(createReq(), createRes(), { name: 'test' }, '/car');
+
+    const activity = JSON.parse(nrp.emit.firstCall.args[1]);
+    assert.deepStrictEqual(['dataShareId' in activity, 'dataShareIds' in activity], [false, false]);
   });
 
   // A super or system token can call an app's schema routes, and the data it changes is that app's.
@@ -1128,3 +1268,65 @@ describe('routes/Route:scoped', () => {
   });
 });
 
+
+// QUERY is RFC 10008's name for what the drafts called SEARCH
+describe('routes/Route: QUERY and SEARCH', () => {
+  const { Verbs } = Route.Constants;
+  const reqWith = (method, contentType) => {
+    const req = createReq({ method });
+    req.get = (header) => (header.toLowerCase() === 'content-type' ? contentType : undefined);
+    return req;
+  };
+
+  it('registers a QUERY or SEARCH route for both methods, and any other for its own', () => {
+    assert.deepStrictEqual(routerMethods(Verbs.QUERY), [Verbs.QUERY, Verbs.SEARCH]);
+    assert.deepStrictEqual(routerMethods(Verbs.SEARCH), [Verbs.QUERY, Verbs.SEARCH]);
+    assert.deepStrictEqual(routerMethods(Verbs.GET), [Verbs.GET]);
+    assert.deepStrictEqual(routerMethods(Verbs.POST), [Verbs.POST]);
+  });
+
+  for (const contentType of ['application/json', 'application/json; charset=utf-8', 'Application/JSON']) {
+    it(`takes a QUERY whose body is ${contentType}, and says which bodies it takes`, () => {
+      const route = createRoute();
+      route.verb = Verbs.QUERY;
+      const res = createRes();
+
+      route._checkQueryMethod(reqWith('QUERY', contentType), res);
+
+      assert.ok(res.set.calledWith('Accept-Query', '"application/json"'));
+      assert.strictEqual(res.set.calledWith('Deprecation'), false);
+    });
+  }
+
+  for (const contentType of [undefined, 'text/plain', 'application/x-www-form-urlencoded']) {
+    it(`refuses a QUERY whose Content-Type is ${contentType ?? 'missing'}`, () => {
+      const route = createRoute();
+      route.verb = Verbs.QUERY;
+
+      assert.throws(
+        () => route._checkQueryMethod(reqWith('QUERY', contentType), createRes()),
+        (err) => err.status === 415 && err.code === 'unsupported_query_type',
+      );
+    });
+  }
+
+  it('answers a SEARCH without a Content-Type as before, but marks it deprecated', () => {
+    const route = createRoute();
+    route.verb = Verbs.QUERY;
+    const res = createRes();
+
+    route._checkQueryMethod(reqWith('SEARCH', undefined), res);
+
+    assert.ok(res.set.calledWith('Deprecation', '@1791158400'));
+  });
+
+  it('leaves other routes alone', () => {
+    const route = createRoute();
+    route.verb = Verbs.POST;
+    const res = createRes();
+
+    route._checkQueryMethod(reqWith('POST', undefined), res);
+
+    assert.strictEqual(res.set.called, false);
+  });
+});

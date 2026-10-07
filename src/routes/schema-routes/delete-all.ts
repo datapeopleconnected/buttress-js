@@ -27,6 +27,7 @@ import { Services } from '../../bootstrap.js';
 import { App } from '../../model/core/app.js';
 
 import * as ACM from '../../access-control/models-access.js';
+import { sourceOfRecord } from './write-target.js';
 
 // The most deleted entities one activity names, and about how much of them it holds
 const BROADCAST_BATCH_SIZE = 1000;
@@ -57,9 +58,12 @@ export default class DeleteAll extends Route {
     const rxsScoped = await ACM.find(model, findParams, req.context.ac);
     const scopedEntities = await Helpers.streamAll<AdapterDocument>(rxsScoped);
 
-    // There's a find for each policy config, so an entity more than one of them selects comes back more than once.
-    const byId = new Map(scopedEntities.map((entity) => [String(entity.id), entity]));
-    return [...byId.values()];
+    // There's a find for each policy config, so an entity more than one of them selects comes back more than once. A
+    // collection with remotes can also have an id in more than one source, and each is removed.
+    const bySource = new Map(
+      scopedEntities.map((entity) => [`${sourceOfRecord(model, entity) ?? ''}/${String(entity.id)}`, entity]),
+    );
+    return [...bySource.values()];
   }
 
   override async _exec(req: Request, _res: Response, scopedEntities: AdapterDocument[] | null) {
@@ -73,13 +77,13 @@ export default class DeleteAll extends Route {
     const ids = scopedEntities.map((entity) => String(entity.id));
     if (ids.length > 0) {
       await this._keepEntitiesBeingDeleted(req, ids, scopedEntities);
-      // A partner's record, found through a collection's remotes, is removed from its source
+      // Each record is removed from where it was read
       await model.rmBulk(
         ids,
-        scopedEntities.map((entity) => entity.sourceId as string | undefined),
+        scopedEntities.map((entity) => sourceOfRecord(model, entity)),
       );
     }
-    return ids;
+    return [...new Set(ids)];
   }
 
   // Clients expect `true` in the response, but a delete limited by policy needs the deleted ids to apply the broadcast.

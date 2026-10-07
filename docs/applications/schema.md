@@ -21,8 +21,10 @@ A schema in ButtressJS is defined as a JSON object with the following key compon
   through — see [Federation](../federation/).
 - **strict**: (Optional) `true` to refuse a create that gives a field the schema doesn't define, with a 400
   `unknown_path` naming it. Without it such fields are dropped, so a client can post back an entity it read. A
-  property typed `object` takes anything beneath it; `id`, `sourceId` and `_`-prefixed keys are always taken. An
-  update to a path the schema doesn't define is refused either way.
+  property typed `object` takes anything beneath it; `id`, `sourceId` and `_`-prefixed keys are always taken. A
+  search naming a path the schema doesn't define is refused the same way; without `strict` it's searched as given,
+  so a client can reach data stored before a property left the schema. An update to a path the schema doesn't
+  define is refused either way.
 
 ### Example
 ```json
@@ -64,7 +66,7 @@ Every property is described by these keys:
 | `__schema` | For `__type: "array"` of objects — the property definitions for each array item |
 | `__timeSeries` | See [Time Series Properties](#time-series-properties) below |
 | `__private` | `true` to keep the property out of every response, though it's stored and can be set; a user's `auth[].password` is one |
-| `__unique` | `true` so no two entities have the same value: a second is refused with a 400, `duplicate`, naming the property. Entities without a value don't count. Not for a property of array items. The datastore enforces it with an index built when the collection starts; if existing values already repeat, the server logs that and carries on without it |
+| `__unique` | `true` so no two entities have the same value: a second is refused with a 400, `duplicate`, naming the property. Entities without a value don't count. On a list of values (`__itemtype`), no two entities may share any value in it, though one entity may repeat a value. Not for a property of array items. The datastore enforces it with an index built when the collection starts; if existing values already repeat, the server logs that and carries on without it |
 
 A property without `__type` is treated as a **nested object** — give it its own map of sub-properties
 directly, the same way you'd describe a top-level schema's `properties`:
@@ -105,8 +107,9 @@ An array of primitives uses `__itemtype` instead:
 
 A value is read as its property's `__type` the same way wherever it's given: in a body you create, in an update,
 or in a query that compares it (`$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`, `$in`, `$nin`, `$all`, and a bare
-value). A value that can't be read is refused with a 400, `invalid_value`, naming the property and the type it
-expected. `null` is always taken, as no value.
+value), the operators an `$elMatch` gives a list's values included, which read it as the list's `__itemtype`. A value
+that can't be read is refused with a 400, `invalid_value`, naming the property and the type it expected. `null` is
+always taken, as no value.
 
 | `__type` | Takes |
 | :- | :- |
@@ -122,7 +125,7 @@ expected. `null` is always taken, as no value.
 
 Earlier releases stored any other text, or any number but `1`, as `false` for a `boolean`, took any text as a
 `uuid`, and compared a query value as it was given, so `"true"` matched no `boolean` and an id that couldn't be one
-matched every entity without one.
+matched every entity without one; and `{"scores": {"$elMatch": {"$gt": "3"}}}` matched no list of numbers.
 
 ### Creating an Entity
 
@@ -200,6 +203,12 @@ them with `"__type": "array", "__itemtype": "id"`). Ids are always strings in th
 such as `"507f1f77bcf86cd799439011"`. Send them as strings when creating, updating or querying, and they're
 returned as strings. Creating or updating an id property with a value that isn't a valid id fails validation.
 
+Every object Buttress returns also has a `sourceId`: the id of the app it comes from, which Buttress adds as it
+returns the object. For a collection with `remotes`, that's the partner app a record comes from (see
+[Federation](../federation/data-sharing.md)). A create checks a `sourceId` it's given, but doesn't store it. Earlier
+releases stored one given at the top of an entity, which then took the place of the app's own, and left out a
+property called `source`, at the top of an entity or in an array item, which is now stored like any other.
+
 Ids held inside an `object` property aren't treated as ids, so they're kept exactly as they're sent.
 
 ## Updating Array Properties
@@ -214,6 +223,34 @@ Ids held inside an `object` property aren't treated as ids, so they're kept exac
 
 Items are checked against the array's `__itemtype` or item `__schema`, element by element when the whole array is replaced. Objects in an array with an item `__schema` keep only the properties the item schema declares, so declare `id` in the item schema if clients give items their own ids. An item of either kind of typed array can't be `null`; to add an item of defaults to an array with an item `__schema`, send `{}`. An array with neither takes any value. An array value always replaces the whole property, so an item that is itself an array can't be appended; replace the whole array instead. To append several items, send one update per item, as an array of updates to `PUT <schema>/:id` or as items of a `bulk/update`; they're applied in order.
 
+An item an update writes to an array with an item `__schema`, whether it's appended, set by its index, one of a whole
+array or in a `bulk/update`, is read as a create reads one: its values as their types (a `date` given as text is
+stored as a date, a `number` given as `"7"` as 7), defaults for what it leaves out, and without fields the item schema
+doesn't define or `_`-prefixed ones. That item is what's stored, what the update's result gives, what the request's
+activity records, what a `PATH_MUTATION` lambda is given, and what a write to a partner's data sends it. Earlier
+releases stored it so, but passed on the item as it was sent: the activity, the lambda and the partner got the fields
+it would drop and its values as text. A date an update gave was recorded in its activity as `{}`; it's now kept.
+
+## Searching
+
+A search sends its query in the body, with the `QUERY` method ([RFC 10008](https://www.rfc-editor.org/rfc/rfc10008)),
+which reads like `GET` but takes a body:
+
+- `QUERY <schema>` takes `{query, skip, limit, sort, project}`, each optional, and responds with the entities found.
+  `skip` and `limit` are numbers of 0 or more, a `limit` of 0 (or none) giving every entity found; a negative one is
+  refused with a 400, `invalid_value_skip` or `invalid_value_limit`. The core searches take them the same way.
+- `QUERY <schema>/count` takes a query, or `{query}`, and responds with the number found.
+- `QUERY <schema>/bulk/load` takes `{query: {ids: [...]}, project}` and responds with those entities.
+
+A `QUERY`'s body must be JSON, sent with `Content-Type: application/json`. Without it the request is refused with a
+415, `unsupported_query_type`. Responses carry `Accept-Query: "application/json"` to say so. A browser on another
+origin sends a preflight `OPTIONS` before a `QUERY`, as it does before a `PUT`.
+
+Earlier releases took searches with the `SEARCH` method, from the drafts that became RFC 10008. `SEARCH` is still
+answered as before, with or without a `Content-Type`, but it's deprecated: its responses carry a `Deprecation`
+header ([RFC 9745](https://www.rfc-editor.org/rfc/rfc9745)), and a later major release will drop it. Move clients
+to `QUERY`.
+
 ## Bulk Requests
 `POST <schema>/bulk/update` takes `[{id, sourceId?, body}]`, where `body` is an update or an array of them. Each item is validated and applied on its own, in order, and the response has one entry per item, in request order:
 
@@ -225,6 +262,41 @@ The response is a 200 whenever the request itself is well formed. The `x-bulk-re
 `POST <schema>/bulk/add` and `POST <schema>/bulk/delete` are all or nothing. `bulk/add` stores nothing unless every entity is valid and none reuses an id, whether another entity's in the request or one already stored; the 400 names the index of the first entity that fails, for example `car: Missing field: name at index 3`. An array sent to `POST <schema>` is stored and checked in the same way. `bulk/delete` deletes nothing unless every id exists and is in the caller's scope, and responds `true`.
 
 `DELETE <schema>` deletes every entity in the caller's scope and responds `true`. A system token, or a token with a `%FULL_ACCESS%` policy, empties the collection, and realtime clients get a single delete with no id. For any other token, the entities its policies' queries don't select are left alone, and realtime clients get a delete for each entity removed, as `DELETE <schema>/:id` would send.
+
+## Searching
+`SEARCH <schema>` and `SEARCH <schema>/count` take a query in the body, `{"query": {…}}`. A query gives each
+property a value to equal, or an object of operators; the operators can be written with `$` or `@`:
+
+| Operator | Matches a property that |
+| :- | :- |
+| `$eq`, a bare value | equals the value; an object of fields is compared whole, as MongoDB compares it (`{"address": {"city": "Leeds"}}` matches only an `address` of exactly that), so use a path to reach inside one (`{"address.city": "Leeds"}`), and so is a list (`{"tags": ["a", "b"]}` matches a `tags` of exactly that list, `{"tags": []}` only an empty one) |
+| `$ne` (`$not`) | doesn't equal it |
+| `$gt`, `$gte`, `$lt`, `$lte`, and `$gtDate`, `$gteDate`, `$ltDate`, `$lteDate` | is after or before it |
+| `$in`, `$nin`, `$all` | is one of a list, none of it, or holds all of it; the value must be a list |
+| `$exists` | is there, or isn't |
+| `$rex`, `$rexi` (`$regex`) | matches a pattern, with case or without |
+| `$inProp` | contains the text |
+| `$elMatch` (`$elemMatch`) | is a list with an item that matches a query, its own `$or`, `$and` and `$nor` included, or a value that passes operators |
+
+`$and`, `$or` and `$nor` take a list of queries. A query naming an operator Buttress doesn't know, or a name with an
+operator's prefix where a property goes, is refused with a 400, `unknown_operator`, naming the property and the
+operator (`$where`, `$expr` and other MongoDB operators included); one giving an operator a value it can't take,
+such as `$in` without a list or a pattern that isn't one, an `$elMatch`'s own operators included, with a 400,
+`invalid_value`. Earlier releases sent both on, and the request failed with a 500, as it did for a list given as a
+value; and they read an empty list given as a value as matching every entity.
+
+A pattern, for `$rex`, `$rexi` or `$regex`, is a JavaScript regular expression that MongoDB reads the same way, so a
+search and realtime match it alike. One that isn't is refused with a 400, `invalid_value`, expecting a `pattern`:
+inline flags such as `(?i)` (use `$rexi` to ignore case); an escaped letter other than the classes `\d`, `\s` and `\w`
+(and `\D`, `\S`, `\W`), `\b`, `\B`, `\f`, `\n`, `\r`, `\t`, `\cX`, `\xhh` and `\k<name>`, such as `\A`, `\Z`, `\Q…\E`,
+`\p{…}`, `\v`, `\x{…}` or `\u…`; a POSIX class such as `[[:alpha:]]`; and a repeat of more than 65535. Earlier releases
+sent them on to MongoDB, which took inline flags, read the others its own way where realtime read them as
+JavaScript does, and refused some with a 500.
+
+A property's value is read as described in [How Values Are Read](#how-values-are-read). A schema with `strict: true`
+refuses a search on a path it doesn't define with a 400, `unknown_path`; a path beneath a property typed `object`, an
+array's items (`tags.0`, `lines.sku`) and `id` and `sourceId` are paths it defines. A path naming `__proto__` is
+refused the same way, whatever the schema.
 
 ## Managing Schemas
 Schemas can be updated, extended, or deleted using the ButtressJS API. The `Schema` class provides methods for merging, validating, and encoding schemas.
@@ -238,6 +310,9 @@ An app's schemas are checked when they're saved (`PUT /api/v1/app/schema`), and 
 - `__required` or `__allowUpdate` that isn't `true` or `false`, an `__enum` that isn't a list, or a `__schema` on
   anything but an `array`;
 - a property name that's empty, has a dot, or starts with `_` (those are the server's) or `$`;
+- a `date`'s `__default` that doesn't read as a date, which would refuse every create that left the property out. It
+  takes a date (`"2026-01-01"`, a number of milliseconds), `"now"` or other words for one (`"today"`, `"tomorrow"`,
+  `"2 days ago"`), or `null` for none;
 - an object with definition keys but no `__type`.
 
 `PUT /api/v1/app/schema` answers once the REST workers of the process that took the request have the new schema's

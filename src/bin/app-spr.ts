@@ -30,6 +30,7 @@ const Config = createConfig({
 }) as unknown as Config;
 
 import Logging from '../helpers/logging.js';
+import version from '../helpers/version.js';
 import BootstrapSocketPolicyRouter from '../bootstrap-spr.js';
 
 Logging.init('SPR');
@@ -44,11 +45,11 @@ if (cluster.isPrimary) Logging.startupMessage();
 
     if (isMain) {
       Logging.log(
-        `${Config.app.title} SPR Main v${Config.app.version} listening on port ` +
+        `${Config.app.title} SPR Main v${version} listening on port ` +
           `${Config.listenPorts.sock} in ${Config.env} mode.`,
       );
     } else {
-      Logging.log(`${Config.app.title} SPR Worker v${Config.app.version} in ${Config.env} mode.`);
+      Logging.log(`${Config.app.title} SPR Worker v${version} in ${Config.env} mode.`);
     }
   } catch (err: unknown) {
     Logging.logError(getThrownErrorMessage(err));

@@ -14,8 +14,6 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Crypto from 'node:crypto';
-
 import StandardModel from '../type/standard.js';
 import { TenantKey } from '../type/tenant-scoped.js';
 import type { AdapterQuery } from '../../types/datastore.js';
@@ -181,18 +179,7 @@ class TokenSchemaModel extends StandardModel<Token> {
    * @return {string} - cryptographically secure token string
    */
   createTokenString() {
-    const length = 36;
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    const mask = 0x3d;
-    let string = '';
-
-    const bytes = Crypto.randomBytes(length);
-    for (let x = 0; x < bytes.length; x++) {
-      const byte = bytes[x];
-      string += chars[byte & mask];
-    }
-
-    return string;
+    return Helpers.Schema.randomString(36);
   }
 
   /*
@@ -228,10 +215,6 @@ class TokenSchemaModel extends StandardModel<Token> {
    * @return {Promise} - resolves after updating token policy properties
    */
   async setPolicyPropertiesById(tokenId: string, policyProperties: Record<string, unknown>) {
-    if (policyProperties.query) {
-      delete policyProperties.query; // What is this line for??
-    }
-
     await super.updateById(this.createId(tokenId), { $set: { policyProperties: policyProperties } });
 
     await this.__refreshTokenPolicies(tokenId);
@@ -244,25 +227,14 @@ class TokenSchemaModel extends StandardModel<Token> {
    * @return {Promise} - resolves to an array of Apps
    */
   async updatePolicyProperties(token: Token, policyProperties: Record<string, unknown>) {
-    if (policyProperties.query) {
-      delete policyProperties.query; // Again, what is this line for??
-    }
-
     const tokenPolicy = token.policyProperties || {};
-    // The accumulator's an array, but only string keys are set on it, so it spreads like an object
-    const policy = Object.keys(policyProperties).reduce(
-      (obj: Record<string, unknown>, key) => {
-        obj[key] = policyProperties[key];
-        return obj;
-      },
-      [] as unknown as Record<string, unknown>,
-    );
-
+    // Spreading copies each own name as one of the result's own, so every name is stored as given: `length` and `query`
+    // too, and `__proto__`, which JSON.parse and BSON give as an own name, never as the result's prototype
     await super.updateById(this.createId(token.id), {
       $set: {
         policyProperties: {
           ...tokenPolicy,
-          ...policy,
+          ...policyProperties,
         },
       },
     });

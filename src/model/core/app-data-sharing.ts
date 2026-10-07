@@ -35,10 +35,15 @@ export type AppDataSharing = {
     ws: string;
     apiPath: string;
     token: string;
+    // The partner app's id, which each side tells the other when they pair, null until known
+    appId?: string | null;
   };
 
   _appId: string;
   _tokenId: string;
+  // The policy that lets the partner's token reach the app's data, made with the agreement; null for an agreement made
+  // before it was recorded
+  _policyId?: string | null;
 };
 
 // A data sharing agreement as posted to the API
@@ -50,6 +55,7 @@ export type AppDataSharingAddBody = {
     ws?: string | null;
     apiPath: string;
     token: string;
+    appId?: string | null;
   };
   policyConfig?: Partial<PolicyConfig>[];
   appId?: string;
@@ -118,6 +124,14 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
             __required: true,
             __allowUpdate: true,
           },
+          // The partner app's id, where a create that names it as its sourceId goes. Pairing records it, and an agreement
+          // paired before asks the partner; its owner can also set it.
+          appId: {
+            __type: 'id',
+            __default: null,
+            __required: false,
+            __allowUpdate: true,
+          },
         },
         _appId: {
           __type: 'id',
@@ -125,6 +139,11 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
           __allowUpdate: false,
         },
         _tokenId: {
+          __type: 'id',
+          __required: false,
+          __allowUpdate: false,
+        },
+        _policyId: {
           __type: 'id',
           __required: false,
           __allowUpdate: false,
@@ -152,12 +171,14 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
         ws: body.remoteApp.ws ? Helpers.trimSlashes(body.remoteApp.ws) : null,
         apiPath: Helpers.trimSlashes(body.remoteApp.apiPath),
         token: body.remoteApp.token,
+        appId: body.remoteApp.appId ? this.createId(body.remoteApp.appId) : null,
       },
 
       policyConfig: body.policyConfig ? body.policyConfig : [],
 
       _appId: this.createId(internals._appId),
       _tokenId: null,
+      _policyId: null,
     };
 
     const rxsToken = await this.__modelManager.getCoreModel(TokenSchemaModel).add(
@@ -171,7 +192,7 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
     );
     const token: Token = await Helpers.streamFirst(rxsToken);
 
-    await this.__createDataSharingPolicy(appDataSharingBody, token.id);
+    const policy = await this.__createDataSharingPolicy(appDataSharingBody, token.id);
 
     Logging.logSilly(`Emitting app-policy:bust-cache ${appDataSharingBody._appId}`);
     this.__nrp?.emit(
@@ -184,6 +205,7 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
     const rxsDataShare = await super.add(appDataSharingBody, {
       _appId: appDataSharingBody._appId,
       _tokenId: token.id,
+      _policyId: policy.id,
     });
     const dataSharing = (await Helpers.streamFirst(rxsDataShare)) as AppDataSharing;
 
@@ -212,27 +234,6 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
   }
 
   /**
-   * @param {ObjectId} appId - app id which needs to be updated
-   * @param {ObjectId} appDataSharingId - Data Sharing Id id which needs to be updated
-   * @param {String} type - data sharing type
-   * @param {Object} policy - policy object for the app
-   * @return {Promise} - resolves when save operation is completed
-   */
-  updatePolicy(appId: string, appDataSharingId: string, type: 'local' | 'remote', policy: unknown) {
-    policy = Helpers.Schema.encode(policy);
-
-    const update: { $set: Record<string, unknown> } = { $set: {} };
-
-    if (type === 'remote') {
-      update.$set['dataSharing.remoteApp'] = policy;
-    } else {
-      update.$set['dataSharing.localApp'] = policy;
-    }
-
-    return this.updateById(this.createId(appDataSharingId), update);
-  }
-
-  /**
    * @param {ObjectId} appDataSharingId - Data Sharing Id id which needs to be updated
    * @param {String} token - activation token for remote app
    * @return {Promise} - resolves when save operation is completed
@@ -249,10 +250,11 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
   /**
    * @param {ObjectId} appDataSharingId - Data Sharing Id id which needs to be updated
    * @param {String} newToken - The new token which will be used to talk to the remote app
+   * @param {String} partnerAppId - the partner app's id, when the partner gave it
    * @return {Promise} - resolves when save operation is completed
    */
-  async activate(appDataSharingId: string, newToken: string | null = null) {
-    const update: { $set: { active: boolean; 'remoteApp.token'?: string } } = {
+  async activate(appDataSharingId: string, newToken: string | null = null, partnerAppId: string | null = null) {
+    const update: { $set: { active: boolean; 'remoteApp.token'?: string; 'remoteApp.appId'?: string } } = {
       $set: {
         active: true,
       },
@@ -261,11 +263,26 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
     if (newToken) {
       update.$set['remoteApp.token'] = newToken;
     }
+    if (partnerAppId) {
+      update.$set['remoteApp.appId'] = this.createId(partnerAppId);
+    }
 
     const result = await this.updateById(this.createId(appDataSharingId), update);
     // Once saved, as the Socket primary connects with what it reads back
     this.__nrp?.emit('dataShare:activated', JSON.stringify({ appDataSharingId: appDataSharingId }));
     return result;
+  }
+
+  /**
+   * Records the partner app's id, for an agreement paired before pairing told each side the other's
+   * @param {string} appDataSharingId
+   * @param {string} partnerAppId - the id the partner gave for its app
+   * @return {Promise} - resolves when save operation is completed
+   */
+  async recordPartnerAppId(appDataSharingId: string, partnerAppId: string) {
+    return this.updateById(this.createId(appDataSharingId), {
+      $set: { 'remoteApp.appId': this.createId(partnerAppId) },
+    });
   }
 
   /**

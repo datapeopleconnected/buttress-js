@@ -16,11 +16,15 @@
 
 import { describe, it, before, after } from 'mocha';
 import assert from 'node:assert';
+import { MongoClient, ObjectId } from 'mongodb';
 
+import Config from '../../config.js';
 import { createApp, updateSchema, ENDPOINT, bjsReq } from '../../helpers.js';
 import { runStep } from '../helpers.js';
 
 import BootstrapRest from '../../../dist/bootstrap-rest.js';
+import { shortId } from '../../../dist/helpers/index.js';
+import { isObjectId } from '../../../dist/datastore/adapters/object-id.js';
 
 let REST_PROCESS = null;
 
@@ -185,24 +189,70 @@ describe('Schema', async () => {
 				assert.strictEqual(entity.name, 'name-test');
 			});
 
-			it(`Should make a SEARCH request for car with name 'name-test'`, async () => {
-				const body = await bjsReq({
-					url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
-					method: 'SEARCH',
-					headers: {'Content-Type': 'application/json'},
-					body: JSON.stringify({query: {name: `name-test`}}),
-				}, testEnv.apps.app1.token);
-				assert.strictEqual(body.length, 1);
-			});
+			// SEARCH is QUERY's name before RFC 10008, answered alike until it's dropped
+			for (const method of ['QUERY', 'SEARCH']) {
+				it(`Should make a ${method} request for car with name 'name-test'`, async () => {
+					const body = await bjsReq({
+						url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
+						method,
+						headers: {'Content-Type': 'application/json'},
+						body: JSON.stringify({query: {name: `name-test`}}),
+					}, testEnv.apps.app1.token);
+					assert.strictEqual(body.length, 1);
+				});
 
-			it('Should make a SEARCH request to get the count of the results', async () => {
-				const body = await bjsReq({
-					url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/count`,
-					method: 'SEARCH',
-					headers: {'Content-Type': 'application/json'},
-					body: JSON.stringify({name: `name-test`}),
-				}, testEnv.apps.app1.token);
-				assert.strictEqual(body, 1);
+				it(`Should make a ${method} request to get the count of the results`, async () => {
+					const body = await bjsReq({
+						url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/count`,
+						method,
+						headers: {'Content-Type': 'application/json'},
+						body: JSON.stringify({name: `name-test`}),
+					}, testEnv.apps.app1.token);
+					assert.strictEqual(body, 1);
+				});
+			}
+
+			describe('QUERY', async () => {
+				const cars = () => `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`;
+				const send = (method, headers, body) => fetch(cars(), {
+					method,
+					headers: {Authorization: `Bearer ${testEnv.apps.app1.token}`, ...headers},
+					body,
+				});
+
+				it('Should say which bodies a QUERY takes', async () => {
+					const res = await send('QUERY', {'Content-Type': 'application/json'}, '{}');
+					assert.strictEqual(res.status, 200);
+					assert.strictEqual(res.headers.get('accept-query'), '"application/json"');
+					assert.strictEqual(res.headers.get('deprecation'), null);
+				});
+
+				for (const [what, headers, body] of [
+					['no Content-Type', {}, undefined],
+					['a body in another type', {'Content-Type': 'text/plain'}, 'name-test'],
+				]) {
+					it(`Should refuse a QUERY with ${what}, saying which bodies it takes`, async () => {
+						const res = await send('QUERY', headers, body);
+						assert.strictEqual(res.status, 415);
+						assert.strictEqual(res.headers.get('accept-query'), '"application/json"');
+						assert.strictEqual((await res.json()).code, 'unsupported_query_type');
+					});
+				}
+
+				it('Should answer a SEARCH without a Content-Type as before, marking it deprecated', async () => {
+					const res = await send('SEARCH', {}, undefined);
+					assert.strictEqual(res.status, 200);
+					assert.ok(Array.isArray(await res.json()));
+					assert.match(res.headers.get('deprecation') ?? '', /^@\d+$/);
+				});
+
+				it('Should allow QUERY from another origin', async () => {
+					const res = await fetch(cars(), {
+						method: 'OPTIONS',
+						headers: {'Origin': 'https://elsewhere.example', 'Access-Control-Request-Method': 'QUERY'},
+					});
+					assert.ok(res.headers.get('access-control-allow-methods')?.split(',').includes('QUERY'));
+				});
 			});
 
 			it('Should make a PUT request to get the count of the results', async () => {
@@ -231,6 +281,21 @@ describe('Schema', async () => {
 					}),
 				}, testEnv.apps.app1.token);
 				assert.strictEqual(body.length, 1);
+			});
+
+			it("Should give a created entity the app's own sourceId, not one the request names", async () => {
+				const [created] = await bjsReq({
+					url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
+					method: 'POST',
+					headers: {'Content-Type': 'application/json'},
+					body: JSON.stringify({name: 'name-test-source', sourceId: '5f0000000000000000000002'}),
+				}, testEnv.apps.app1.token);
+				const read = await bjsReq({
+					url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/${created.id}`,
+				}, testEnv.apps.app1.token);
+
+				assert.strictEqual(created.sourceId, testEnv.apps.app1.id);
+				assert.strictEqual(read.sourceId, testEnv.apps.app1.id);
 			});
 
 			// TODO: Update Many
@@ -269,7 +334,7 @@ describe('Schema', async () => {
 
 		const countNamed = (name) => bjsReq({
 			url: `${carsUrl()}/count`,
-			method: 'SEARCH',
+			method: 'QUERY',
 			headers: {'Content-Type': 'application/json'},
 			body: JSON.stringify({query: {name}}),
 		}, testEnv.apps.app1.token);
@@ -362,7 +427,7 @@ describe('Schema', async () => {
 	describe('Search operators', async () => {
 		const searchNames = async (query) => (await bjsReq({
 			url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
-			method: 'SEARCH',
+			method: 'QUERY',
 			headers: {'Content-Type': 'application/json'},
 			body: JSON.stringify({query}),
 		}, testEnv.apps.app1.token)).map((car) => car.name);
@@ -380,9 +445,37 @@ describe('Schema', async () => {
 			assert.deepStrictEqual(await searchNames({name: {$rexi: '^rex-case'}}), ['Rex-Case-Car']);
 		});
 
+		const refusal = (code, details) => (err) => {
+			assert.strictEqual(err.code, 400);
+			assert.strictEqual(err.body.code, code);
+			assert.deepStrictEqual(err.body.details, details);
+			return true;
+		};
+
+		it('Should refuse a search naming an operator Buttress doesn\'t know, with 400', async () => {
+			await assert.rejects(() => searchNames({name: {$foo: 'x'}}), refusal('unknown_operator', {path: 'name', received: '$foo'}));
+			await assert.rejects(() => searchNames({name: {'@foo': 'x'}}), refusal('unknown_operator', {path: 'name', received: '@foo'}));
+			await assert.rejects(() => searchNames({$where: 'this.name'}), refusal('unknown_operator', {path: '$where', received: '$where'}));
+			await assert.rejects(() => bjsReq({
+				url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/count`,
+				method: 'SEARCH',
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify({query: {name: {$regx: '^R'}}}),
+			}, testEnv.apps.app1.token), refusal('unknown_operator', {path: 'name', received: '$regx'}));
+		});
+
+		it('Should refuse a search giving an operator a value it can\'t take, with 400', async () => {
+			await assert.rejects(() => searchNames({name: {$in: 'Rex-Case-Car'}}), refusal('invalid_value', {path: 'name', expected: 'array'}));
+			await assert.rejects(() => searchNames({name: {$rex: '('}}), refusal('invalid_value', {path: 'name', expected: 'pattern'}));
+			// Patterns MongoDB reads differently from JavaScript, or refuses
+			await assert.rejects(() => searchNames({name: {$rex: '\\u0041'}}), refusal('invalid_value', {path: 'name', expected: 'pattern'}));
+			await assert.rejects(() => searchNames({name: {$rex: '\\ARex'}}), refusal('invalid_value', {path: 'name', expected: 'pattern'}));
+		});
+
 		it('Should fail a search that MongoDB refuses while streaming, and keep serving requests', async () => {
-			// MongoDB only rejects a non-array $in once the cursor runs, after the route has its stream.
-			await assert.rejects(() => searchNames({name: {$in: 'Rex-Case-Car'}}), (err) => {
+			// A pattern JavaScript reads and MongoDB doesn't (a lookbehind of no fixed length): MongoDB only rejects it once
+			// the cursor runs, after the route has its stream.
+			await assert.rejects(() => searchNames({name: {$rex: '(?<=R+)ex'}}), (err) => {
 				assert.strictEqual(err.code, 500);
 				assert.deepStrictEqual(err.body, { code: 'internal_error', message: 'Internal server error' });
 				return true;
@@ -722,6 +815,189 @@ describe('Schema', async () => {
 			await putSpaceship([{path: 'tags', value: 'e'}, {path: 'tags.0.__remove__', value: ''}]);
 
 			assert.deepStrictEqual((await getSpaceship()).tags, ['a', 'b', 'c', 'd', 'e']);
+		});
+	});
+
+	// An item an update writes to an array with an item __schema is the item a create stores, which the request's
+	// activity records (SR-DPC-001 D2)
+	describe('Updating array items', async () => {
+		const REF = '507f1f77bcf86cd799439013';
+		let client = null;
+		let db = null;
+		let app = null;
+		let logbook = null;
+
+		// With a field the item schema doesn't define, and a `_` one, which only the server sets
+		const given = (note) => ({at: '2026-01-02', count: '7', ref: REF, note, _internal: 'client', extra: 'x'});
+		// As the schema reads it, as JSON gives it
+		const returned = (note) => ({at: '2026-01-02T00:00:00.000Z', count: 7, ref: REF, note});
+
+		const put = (body) => bjsReq({
+			url: `${ENDPOINT.REST}/${app.apiPath}/api/v1/logbook/${logbook.id}`,
+			method: 'PUT',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify(body),
+		}, app.token);
+
+		// The entity's items as MongoDB holds them
+		const storedEntries = async () => {
+			const stored = await db.collection(`${shortId(app.id)}-logbook`).findOne({_id: new ObjectId(logbook.id)});
+			return stored.entries;
+		};
+
+		// Values as their types, and no field the item schema doesn't define
+		const assertStored = (item, note) => {
+			assert.deepStrictEqual(Object.keys(item), ['at', 'count', 'ref', 'note']);
+			assert.deepStrictEqual(item.at, new Date('2026-01-02'));
+			assert.strictEqual(item.count, 7);
+			assert.ok(isObjectId(item.ref), `ref is stored as ${typeof item.ref}`);
+			assert.strictEqual(item.ref.toHexString(), REF);
+			assert.strictEqual(item.note, note);
+		};
+
+		// The updates the request's activity recorded, once it's been added
+		const recordedUpdates = async (note) => {
+			for (let attempt = 0; attempt < 50; attempt++) {
+				const [activity] = await db.collection('activities').find({body: {$regex: note}}).toArray();
+				if (activity) return JSON.parse(activity.body);
+				await new Promise((resolve) => setTimeout(resolve, 100));
+			}
+			throw new Error(`No activity recorded ${note}`);
+		};
+
+		before(async function() {
+			client = await MongoClient.connect(Config.datastore.connectionString);
+			db = client.db(`${Config.app.code}-${Config.env}`);
+
+			app = await createApp(ENDPOINT.REST, 'Test Array Items App', 'test-array-items-app');
+			await updateSchema(ENDPOINT.REST, [{
+				name: 'logbook',
+				type: 'collection',
+				properties: {
+					name: {__type: 'string', __default: null, __allowUpdate: true},
+					entries: {
+						__type: 'array',
+						__allowUpdate: true,
+						__schema: {
+							at: {__type: 'date', __default: null, __allowUpdate: true},
+							count: {__type: 'number', __default: 0, __allowUpdate: true},
+							ref: {__type: 'id', __default: null, __allowUpdate: true},
+							note: {__type: 'string', __default: 'none', __allowUpdate: true},
+						},
+					},
+				},
+			}], app.token);
+
+			[logbook] = await bjsReq({
+				url: `${ENDPOINT.REST}/${app.apiPath}/api/v1/logbook`,
+				method: 'POST',
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify({name: 'log-1', entries: [given('d2-added')]}),
+			}, app.token);
+		});
+
+		after(async () => {
+			await client?.close();
+		});
+
+		it('Should store an item added on create as the schema reads it', async () => {
+			assert.deepStrictEqual(logbook.entries, [returned('d2-added')]);
+			assertStored((await storedEntries())[0], 'd2-added');
+		});
+
+		it('Should push an item as a create stores it, giving and recording the item stored', async () => {
+			const [{type, path, value}] = await put({path: 'entries', value: given('d2-pushed')});
+			assert.deepStrictEqual({type, path, value}, {type: 'vector-add', path: 'entries', value: returned('d2-pushed')});
+
+			assertStored((await storedEntries())[1], 'd2-pushed');
+			const [update] = await recordedUpdates('d2-pushed');
+			assert.deepStrictEqual(update.value, returned('d2-pushed'));
+		});
+
+		it('Should set an item by its index as a create stores it', async () => {
+			const [{value}] = await put({path: 'entries.0', value: given('d2-set')});
+			assert.deepStrictEqual(value, returned('d2-set'));
+
+			assertStored((await storedEntries())[0], 'd2-set');
+			const [update] = await recordedUpdates('d2-set');
+			assert.deepStrictEqual(update.value, returned('d2-set'));
+		});
+
+		it('Should replace the whole array with each item as a create stores it', async () => {
+			const [{value}] = await put({path: 'entries', value: [given('d2-whole-a'), given('d2-whole-b')]});
+			assert.deepStrictEqual(value, [returned('d2-whole-a'), returned('d2-whole-b')]);
+
+			const entries = await storedEntries();
+			assert.strictEqual(entries.length, 2);
+			assertStored(entries[0], 'd2-whole-a');
+			assertStored(entries[1], 'd2-whole-b');
+			const [update] = await recordedUpdates('d2-whole-a');
+			assert.deepStrictEqual(update.value, [returned('d2-whole-a'), returned('d2-whole-b')]);
+		});
+
+		it('Should write the items of a bulk update as a create stores them', async () => {
+			const [{results}] = await bjsReq({
+				url: `${ENDPOINT.REST}/${app.apiPath}/api/v1/logbook/bulk/update`,
+				method: 'POST',
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify([{
+					id: logbook.id,
+					body: [{path: 'entries', value: given('d2-bulk-pushed')}, {path: 'entries.0', value: given('d2-bulk-set')}],
+				}]),
+			}, app.token);
+			assert.deepStrictEqual(results.map((r) => r.value), [returned('d2-bulk-pushed'), returned('d2-bulk-set')]);
+
+			const entries = await storedEntries();
+			assertStored(entries[0], 'd2-bulk-set');
+			assertStored(entries[2], 'd2-bulk-pushed');
+			const [{body}] = await recordedUpdates('d2-bulk-pushed');
+			assert.deepStrictEqual(body.map((update) => update.value), [returned('d2-bulk-pushed'), returned('d2-bulk-set')]);
+		});
+	});
+
+	// A strict schema refuses a search on a path it doesn't define, as it refuses a create giving one
+	describe('Searching a strict schema', async () => {
+		const searchGadgets = (query) => bjsReq({
+			url: `${ENDPOINT.REST}/${testEnv.apps.strict.apiPath}/api/v1/gadget`,
+			method: 'SEARCH',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify({query}),
+		}, testEnv.apps.strict.token);
+
+		before(async function() {
+			this.timeout(20000);
+			testEnv.apps.strict = await runStep('create the strict app', async () =>
+				createApp(ENDPOINT.REST, 'Test Strict App', 'test-strict-app')
+			, 'Strict search setup');
+			await runStep('add the strict gadget schema', async () => updateSchema(ENDPOINT.REST, [{
+				name: 'gadget',
+				type: 'collection',
+				strict: true,
+				properties: {
+					name: {__type: 'string', __default: null, __required: true, __allowUpdate: true},
+					specs: {__type: 'object', __default: null, __required: false, __allowUpdate: true},
+				},
+			}], testEnv.apps.strict.token), 'Strict search setup');
+			await bjsReq({
+				url: `${ENDPOINT.REST}/${testEnv.apps.strict.apiPath}/api/v1/gadget`,
+				method: 'POST',
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify({name: 'Widget', specs: {weight: 3}}),
+			}, testEnv.apps.strict.token);
+		});
+
+		it('Should refuse a search on a path the schema doesn\'t define, with 400 unknown_path', async () => {
+			await assert.rejects(() => searchGadgets({colour: 'red'}), (err) => {
+				assert.strictEqual(err.code, 400);
+				assert.strictEqual(err.body.code, 'unknown_path');
+				assert.deepStrictEqual(err.body.details, {path: 'colour'});
+				return true;
+			});
+		});
+
+		it('Should search the paths the schema defines, and beneath a property typed object', async () => {
+			assert.deepStrictEqual((await searchGadgets({name: 'Widget'})).map((gadget) => gadget.name), ['Widget']);
+			assert.deepStrictEqual((await searchGadgets({'specs.weight': 3})).map((gadget) => gadget.name), ['Widget']);
 		});
 	});
 });

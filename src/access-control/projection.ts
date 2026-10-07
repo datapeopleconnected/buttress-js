@@ -20,7 +20,9 @@ import * as Helpers from '../helpers/index.js';
 import { PolicyProjection } from '../model/core/policy.js';
 import type { FlattenedSchema, Schema } from '../types/schema.js';
 
-import { ApplicablePolicyConfig, PolicyError } from './index.js';
+import { PolicyError } from './index.js';
+import { LOGICAL_ALIASES } from './operators.js';
+import type { Grant } from './evaluator.js';
 import type { RequestWithBody } from '../types/routes.js';
 
 type RequestBody = Record<string, unknown>;
@@ -95,27 +97,26 @@ const resetUnprojected = (
  * @class Projection
  */
 class Projection {
-  private logicalOperator: string[];
   private _ignoredQueryKeys: string[];
 
   constructor() {
-    this.logicalOperator = ['$and', '$or'];
-
     this._ignoredQueryKeys = ['__crPath', 'project', 'id'];
   }
 
-  async filterPoliciesByPolicyProjection(req: Request, applicablePolicies: ApplicablePolicyConfig[], schema: Schema) {
-    const output: ApplicablePolicyConfig[] = [];
+  /**
+   * The grants a request can go through, as far as properties go: a read only by properties a grant reads, an update
+   * only of paths within them, and an entity to create with the others given their defaults. A grant that restricts
+   * properties and doesn't let a read through is left out; an update it doesn't let through is refused.
+   */
+  async filterGrantsByRequest(req: Request, grants: Grant[], schema: Schema): Promise<Grant[]> {
+    const output: Grant[] = [];
 
-    for await (const policy of applicablePolicies) {
-      if (!policy.config.projection) {
-        output.push(policy);
-      } else {
-        const result = await this.__applyPolicyProjection(req, policy.config.projection, schema);
-        if (result !== false) {
-          policy.config.projection = result;
-          output.push(policy);
-        }
+    for (const grant of grants) {
+      if (
+        !grant.config.projection ||
+        (await this.__applyPolicyProjection(req, grant.config.projection, schema)) !== false
+      ) {
+        output.push(grant);
       }
     }
 
@@ -234,29 +235,29 @@ class Projection {
     return [{ ...result, value: projectValue(result.value, childKeys) }];
   }
 
+  // Whether a read's query names only properties the projection keys let through, at any depth of its $and, $or and $nor,
+  // and so does its sort, as the order of what it reads would show a property it sorts by
   __checkProjectionPath(requestBody: RequestBody, projectionKeys: string[]) {
     const query = requestBody.query ? (requestBody.query as RequestBody) : requestBody;
-    const paths = Object.keys(query).filter((key) => key && !this._ignoredQueryKeys.includes(key));
-    let queryKeys: string[] = [];
+    const sortKeys = isPlainObject(requestBody.sort)
+      ? Object.keys(requestBody.sort).filter((key) => !this._ignoredQueryKeys.includes(key))
+      : [];
 
-    paths.forEach((path) => {
-      if (this.logicalOperator.includes(path)) {
-        (query[path] as RequestBody[]).forEach((p) => {
-          queryKeys = queryKeys.concat(Object.keys(p));
-        });
-        return;
-      }
-
-      if (typeof path === 'object' && !Array.isArray(path)) {
-        queryKeys = queryKeys.concat(Object.keys(path));
-      } else {
-        queryKeys = queryKeys.concat(path);
-      }
-    });
-
-    return queryKeys.every(
-      (key) => projectionKeys.includes(key) || projectionKeys.some((k) => key.startsWith(k) && key[k.length] === '.'),
+    return [...this.__queryFields(query), ...sortKeys].every((key) =>
+      projectionKeys.some((projectionKey) => isWithin(key, projectionKey)),
     );
+  }
+
+  // The properties a query names, within its logical operators too; an id and the request's own keys aren't properties
+  __queryFields(query: RequestBody): string[] {
+    return Object.entries(query).flatMap(([key, value]) => {
+      if (Object.hasOwn(LOGICAL_ALIASES, key)) {
+        return Array.isArray(value)
+          ? value.flatMap((part) => (isPlainObject(part) ? this.__queryFields(part) : []))
+          : [];
+      }
+      return key && !this._ignoredQueryKeys.includes(key) ? [key] : [];
+    });
   }
 }
 export default new Projection();

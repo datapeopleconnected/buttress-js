@@ -47,7 +47,7 @@ export default class GetMany extends Route {
 
     super(`${schemaRoutePath}/bulk/load`, `BULK GET ${schema.name}`, services, schema, app);
     this.__configureSchemaRoute();
-    this.verb = Route.Constants.Verbs.SEARCH;
+    this.verb = Route.Constants.Verbs.QUERY;
     this.permissions = Route.Constants.Permissions.READ;
 
     this.activityDescription = `BULK GET ${schema.name}`;

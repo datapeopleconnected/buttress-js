@@ -21,6 +21,7 @@ import Config from '../helpers/config.js';
 import { getThrownErrorMessage } from '../helpers/index.js';
 
 import Logging from '../helpers/logging.js';
+import version from '../helpers/version.js';
 import BootstrapRest from '../bootstrap-rest.js';
 
 Logging.init('REST');
@@ -35,14 +36,12 @@ if (cluster.isPrimary) Logging.startupMessage();
 
     if (isMain) {
       Logging.log(
-        `${Config.app.title}:${Config.app.code} REST Server Main v${Config.app.version} listening on port ` +
+        `${Config.app.title}:${Config.app.code} REST Server Main v${version} listening on port ` +
           `${Config.listenPorts.rest} in ${Config.env} mode.`,
       );
       Logging.log(`Configured Main Endpoint: ${Config.app.protocol}://${Config.app.host}`);
     } else {
-      Logging.log(
-        `${Config.app.title}:${Config.app.code} REST Server Worker v${Config.app.version} ` + `in ${Config.env} mode.`,
-      );
+      Logging.log(`${Config.app.title}:${Config.app.code} REST Server Worker v${version} ` + `in ${Config.env} mode.`);
     }
   } catch (err: unknown) {
     Logging.logError(getThrownErrorMessage(err));

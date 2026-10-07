@@ -20,27 +20,54 @@ import * as Helpers from '../../helpers/index.js';
 import StandardModel from './standard.js';
 import RemoteModel from './remote.js';
 
-import { SourceDataSharingRouting } from '../../services/source-ds-routing.js';
 import { App } from '../core/app.js';
+import AppDataSharingSchemaModel from '../core/app-data-sharing.js';
 import { Schema } from '../../helpers/schema.js';
 import { Services } from '../../bootstrap.js';
 import { Datastore } from '../../datastore/index.js';
 import ButtressAdapter from '../../datastore/adapters/buttress.js';
-import { ChunkSentEvent } from '../../helpers/stream.js';
+import { ChunkReceivedEvent } from '../../helpers/stream.js';
 import { AdapterDocument, AdapterQuery, UpdatePathBody } from '../../types/datastore.js';
 import Logging from '../../helpers/logging.js';
+
+// A sort direction as MongoDB reads one: 1, -1, 'asc', 'desc', 'ascending' or 'descending', in any case, so the sources
+// merge in the order each is sorted in. Anything else is for the sources to refuse, as the MongoDB adapter does.
+const sortDirection = (value: unknown) => (/^(?:-1|desc|descending)$/i.test(String(value)) ? -1 : 1);
 
 // How long to wait before trying a partner that couldn't be reached again, doubling each time up to the most
 const REMOTE_RETRY_FIRST_MS = 1000;
 const REMOTE_RETRY_MOST_MS = 60000;
-
-/**
- * @class RemoteCombinedModel
- */
+// The least time between asking a partner which app it is, when a create can't be placed without knowing
+const PARTNER_ASK_MS = 10000;
 
 // A partner a read or write needs can't be reached
-const partnerUnavailable = () =>
+export const partnerUnavailable = () =>
   Helpers.Errors.unavailable('data_sharing_partner_unavailable', 'A data sharing partner is unavailable');
+
+// Where each record a federated collection read came from: null for the app's own, or the id of the agreement it was
+// read through. It's kept by the record object, so it's never part of what's returned.
+const servedThrough = new WeakMap<object, string | null>();
+const noteSource = (record: unknown, via: string | null) => {
+  if (record && typeof record === 'object') servedThrough.set(record, via);
+};
+
+// Ids are compared as strings, whatever their case
+const sameId = (a: unknown, b: unknown) => String(a).toLowerCase() === String(b).toLowerCase();
+
+// What an add gave, as the entities it created
+const createdEntities = async (result: unknown): Promise<unknown[]> => {
+  if (result instanceof Stream.Readable) return Helpers.streamAll<unknown>(result);
+  return Array.isArray(result) ? result : [result];
+};
+
+/**
+ * A collection with `remotes`: the app's own records and each partner's, read together. Nothing goes by the sourceId a
+ * partner's record names, as the partner gives that. A write to a record goes through the agreement the record was read
+ * through, which the writing route finds with its own read (sourceOf). A create, with nothing to read first, goes to the
+ * agreement whose partner app is the source it names, as pairing records it on the agreement or the partner says when
+ * asked (_createTarget).
+ * @class RemoteCombinedModel
+ */
 export default class RemoteCombinedModel extends StandardModel {
   override app: App;
 
@@ -48,7 +75,11 @@ export default class RemoteCombinedModel extends StandardModel {
 
   private _remoteModels: RemoteModel[];
 
-  _sdsRouting: SourceDataSharingRouting;
+  // The partner app each agreement the collection reads reaches, by agreement: as the agreement records it, or as the
+  // partner says when asked. Null until known.
+  private _partnerAppIds: Map<string, string | null>;
+  // When each partner was last asked which app it is
+  private _partnerAskedAt: Map<string, number>;
 
   // The agreements whose partner couldn't be reached, which are tried again until they are
   private _unreachable: Set<string>;
@@ -67,11 +98,11 @@ export default class RemoteCombinedModel extends StandardModel {
 
     this._remoteModels = [];
 
+    this._partnerAppIds = new Map();
+    this._partnerAskedAt = new Map();
     this._unreachable = new Set();
     this._retryTimeouts = new Set();
     this._destroyed = false;
-
-    this._sdsRouting = services.get('sdsRouting') as SourceDataSharingRouting;
   }
 
   override async initAdapter(localDataStore?: Datastore | null, remoteDatastores?: Datastore[]) {
@@ -88,6 +119,8 @@ export default class RemoteCombinedModel extends StandardModel {
     }
 
     for await (const remoteDatastore of remoteDatastores) {
+      // The model manager sets the agreement and the partner app it records on each remote datastore
+      this._partnerAppIds.set(String(remoteDatastore.dataSharingId), remoteDatastore.partnerAppId ?? null);
       await this._connectRemote(remoteDatastore, REMOTE_RETRY_FIRST_MS);
     }
   }
@@ -143,6 +176,33 @@ export default class RemoteCombinedModel extends StandardModel {
     if (this._unreachable.delete(dataSharingId)) {
       Logging.log(`Partner of data sharing ${dataSharingId} for ${this.schemaData.name} reached`);
     }
+
+    if (!this._partnerAppIds.get(dataSharingId) && adapter instanceof ButtressAdapter) {
+      await this._askPartnerAppId(dataSharingId, adapter);
+    }
+  }
+
+  /**
+   * Asks the partner of an agreement paired before pairing told each side the other's app which app it is, and records
+   * it on the agreement. A partner that doesn't say (one from before it could) is asked again when a create needs it.
+   * @param {string} dataSharingId
+   * @param {ButtressAdapter} adapter - connected to the partner
+   */
+  private async _askPartnerAppId(dataSharingId: string, adapter: ButtressAdapter) {
+    this._partnerAskedAt.set(dataSharingId, Date.now());
+    try {
+      const partnerAppId = await adapter.partnerAppId();
+      if (!partnerAppId || this._destroyed) return;
+
+      this._partnerAppIds.set(dataSharingId, partnerAppId);
+      await this.__modelManager.getCoreModel(AppDataSharingSchemaModel).recordPartnerAppId(dataSharingId, partnerAppId);
+      Logging.log(`Data sharing ${dataSharingId} reaches app ${partnerAppId}, as its partner says`);
+    } catch (err: unknown) {
+      Logging.logWarn(
+        `Unable to learn which app data sharing ${dataSharingId} reaches, so a create naming it is refused until it's ` +
+          `known: ${Helpers.getThrownErrorMessage(err)}`,
+      );
+    }
   }
 
   private _retryRemote(remoteDatastore: Datastore, delay: number) {
@@ -194,13 +254,97 @@ export default class RemoteCombinedModel extends StandardModel {
     return this._localModel;
   }
 
-  async _getTargetModel(sourceId?: string | null) {
-    if (!sourceId || sourceId === this.app.id.toString()) return this.localModel;
+  /**
+   * Finds the partner app of an agreement that doesn't know it: the agreement may have it now (its owner set it, or
+   * another process learnt it), or else its partner, if reachable, is asked, at most every PARTNER_ASK_MS.
+   * @param {string} dataSharingId
+   */
+  private async _relearnPartnerAppId(dataSharingId: string) {
+    try {
+      const agreement = await this.__modelManager.getCoreModel(AppDataSharingSchemaModel).findById(dataSharingId);
+      const recorded = agreement?.remoteApp?.appId;
+      if (recorded) {
+        this._partnerAppIds.set(dataSharingId, String(recorded));
+        return;
+      }
+    } catch (err: unknown) {
+      Logging.logWarn(`Unable to read data sharing ${dataSharingId}: ${Helpers.getThrownErrorMessage(err)}`);
+    }
 
-    const dataSharingId = await this._sdsRouting.get(this.app.id.toString(), sourceId);
-    if (dataSharingId) return this._remoteModelThrough(dataSharingId);
+    const adapter = this._remoteModels.find((model) => model.dataSharingId.toString() === dataSharingId)?.adapter;
+    const askedAt = this._partnerAskedAt.get(dataSharingId) ?? 0;
+    if (adapter instanceof ButtressAdapter && Date.now() - askedAt >= PARTNER_ASK_MS) {
+      await this._askPartnerAppId(dataSharingId, adapter);
+    }
+  }
 
-    throw new Error(`Unable to resolve target model for sourceId: ${sourceId}`);
+  /**
+   * Where a create that names `sourceId` as its source goes: the app's own collection when it names none or the app,
+   * else the agreement whose partner app it is, as the agreements know their partners (never by what records say). A
+   * source it can't place while an agreement doesn't know its partner's app has that found out first.
+   * @param {unknown} sourceId
+   * @return {Promise<{model: StandardModel, via: string|null}>} - the model to create in, and its agreement (null for
+   * the app's own)
+   */
+  async _createTarget(sourceId?: unknown): Promise<{ model: StandardModel; via: string | null }> {
+    if (sourceId === undefined || sourceId === null || sourceId === '' || sameId(sourceId, this.app.id)) {
+      return { model: this.localModel, via: null };
+    }
+
+    const reachingOf = () => [...this._partnerAppIds].filter(([, appId]) => appId && sameId(appId, sourceId));
+    const unknown = () => [...this._partnerAppIds].filter(([, appId]) => !appId).map(([via]) => via);
+    if (reachingOf().length < 1 && unknown().length > 0) {
+      await Promise.all(unknown().map((via) => this._relearnPartnerAppId(via)));
+    }
+
+    const reaching = reachingOf();
+    if (reaching.length > 1) {
+      throw Helpers.Errors.conflict('ambiguous_source', `More than one agreement reaches the app ${sourceId}`, {
+        sourceId: String(sourceId),
+      });
+    }
+    if (reaching.length === 1) {
+      const [via] = reaching[0];
+      return { model: this._remoteModelThrough(via), via };
+    }
+
+    // It may be the partner of an agreement whose partner app isn't known yet
+    if (unknown().length > 0) {
+      throw Helpers.Errors.conflict(
+        'data_sharing_partner_unknown',
+        "An agreement the collection reads doesn't know which app it reaches yet",
+        { sourceId: String(sourceId) },
+      );
+    }
+    throw Helpers.Errors.badRequest(
+      'unknown_source',
+      `The ${this.schemaData.name} collection reads no app ${sourceId}`,
+      {
+        sourceId: String(sourceId),
+      },
+    );
+  }
+
+  // The model for the agreement a record was read through (sourceOf), or the app's own for none
+  _modelThrough(via?: string | null) {
+    return via ? this._remoteModelThrough(via) : this.localModel;
+  }
+
+  /**
+   * Where a record this collection read came from, as the read found it rather than as the record says.
+   * @param {unknown} record - one this collection's find gave
+   * @return {string|null|undefined} - the agreement it was read through, null for the app's own, or undefined for a
+   * record the collection didn't read
+   */
+  sourceOf(record: unknown) {
+    return record && typeof record === 'object' ? servedThrough.get(record) : undefined;
+  }
+
+  /**
+   * @return {boolean} - whether a partner the collection reads couldn't be reached, so its records were left out
+   */
+  hasUnreachablePartner() {
+    return this._unreachable.size > 0;
   }
 
   _remoteModelThrough(dataSharingId: string) {
@@ -222,36 +366,67 @@ export default class RemoteCombinedModel extends StandardModel {
   }
 
   /**
-   * @param {object} body
+   * Creates each entity where the sourceId it names is (_createTarget), every one of them found before any is created.
+   * Entities for more than one source are created a source at a time and given back in the order they came; one source
+   * failing leaves those created before it.
+   * @param {object} body - an entity, or a list of them
    * @return {Promise}
    */
   override async add(body: AdapterDocument | AdapterDocument[]) {
-    return (await this._getTargetModel((body as { sourceId?: string }).sourceId)).add(body);
+    if (!Array.isArray(body)) return (await this._createTarget(body.sourceId)).model.add(body);
+
+    // Each source named is placed once
+    const sourceKey = (entity: AdapterDocument) => String(entity.sourceId ?? '').toLowerCase();
+    const bySource = new Map<string, { model: StandardModel; via: string | null }>();
+    for (const entity of body) {
+      if (!bySource.has(sourceKey(entity))) bySource.set(sourceKey(entity), await this._createTarget(entity.sourceId));
+    }
+    const targets = body.map(
+      (entity) => bySource.get(sourceKey(entity)) as { model: StandardModel; via: string | null },
+    );
+    const vias = [...new Set(targets.map((target) => target.via))];
+    if (vias.length < 2) return (targets[0]?.model ?? this.localModel).add(body);
+
+    const created: unknown[] = [];
+    for (const via of vias) {
+      const indexes = body.map((_entity, idx) => idx).filter((idx) => targets[idx].via === via);
+      const result = await targets[indexes[0]].model.add(indexes.map((idx) => body[idx]));
+      const entities = await createdEntities(result);
+      indexes.forEach((idx, n) => (created[idx] = entities[n]));
+    }
+    return Stream.Readable.from(
+      created.filter((entity) => entity !== undefined),
+      { objectMode: true },
+    );
   }
 
-  override async update(details: AdapterQuery, id: string, sourceId?: string) {
-    if (!sourceId) throw new Error('SourceId is required for update');
-
-    return (await this._getTargetModel(sourceId)).updateById(id, details);
+  /**
+   * @param {object} details
+   * @param {string} id
+   * @param {string} via - the agreement the record was read through (sourceOf), none for the app's own
+   * @return {Promise}
+   */
+  override async update(details: AdapterQuery, id: string, via?: string | null) {
+    return this._modelThrough(via).updateById(id, details);
   }
 
   /**
    * @param {object} body
    * @param {string} id
-   * @param {string} sourceId
+   * @param {string} via - the agreement the record was read through (sourceOf), none for the app's own
    * @return {promise}
    */
-  override async updateByPath(body: UpdatePathBody | UpdatePathBody[], id: string, sourceId?: string | null) {
-    return (await this._getTargetModel(sourceId)).updateByPath(body, id);
+  override async updateByPath(body: UpdatePathBody | UpdatePathBody[], id: string, via?: string | null) {
+    return this._modelThrough(via).updateByPath(body, id);
   }
 
   /**
    * @param {string} id
-   * @param {string} sourceId
+   * @param {string} via - the agreement the record was read through (sourceOf), none for the app's own
    * @return {Boolean}
    */
-  override async exists(id: string, sourceId?: string | null) {
-    return (await this._getTargetModel(sourceId)).exists(id);
+  override async exists(id: string, via?: string | null) {
+    return this._modelThrough(via).exists(id);
   }
 
   /**
@@ -259,8 +434,8 @@ export default class RemoteCombinedModel extends StandardModel {
    * @param {string} sourceId
    * @return {Boolean}
    */
-  override async isDuplicate(details: unknown, sourceId?: string) {
-    return (await this._getTargetModel(sourceId)).isDuplicate(details);
+  override async isDuplicate(details: unknown) {
+    return (await this._createTarget((details as { sourceId?: unknown } | null)?.sourceId)).model.isDuplicate(details);
     // // Make a call to each api, if any return true then return true.
     // const calls = this._remoteModels.map((remoteModel) => remoteModel.isDuplicate(details));
     // const results = await Promise.all(calls);
@@ -278,32 +453,27 @@ export default class RemoteCombinedModel extends StandardModel {
 
   /**
    * @param {string} id
-   * @param {string} sourceId - the source of a partner's record, none for the app's own
+   * @param {string} via - the agreement the record was read through (sourceOf), none for the app's own
    * @return {Promise}
    */
-  override async rm(id: string, sourceId?: string | null) {
-    return (await this._getTargetModel(sourceId)).rm(id);
+  override async rm(id: string, via?: string | null) {
+    return this._modelThrough(via).rm(id);
   }
 
   /**
-   * Removes each record from its source. Every source is found before any record is removed.
+   * Removes each record from where it was read. Every source is found before any record is removed.
    * @param {array} ids
-   * @param {array} sourceIds - the source of each record, none for the app's own
+   * @param {array} vias - the agreement each record was read through (sourceOf), none for the app's own
    * @return {Promise}
    */
-  override async rmBulk(ids: string[], sourceIds: (string | null | undefined)[] = []) {
+  override async rmBulk(ids: string[], vias: (string | null | undefined)[] = []) {
     const bySource = new Map<string | null, string[]>();
     ids.forEach((id, idx) => {
-      const sourceId = sourceIds[idx] ?? null;
-      bySource.set(sourceId, [...(bySource.get(sourceId) ?? []), id]);
+      const via = vias[idx] ?? null;
+      bySource.set(via, [...(bySource.get(via) ?? []), id]);
     });
 
-    const removals = await Promise.all(
-      [...bySource].map(async ([sourceId, idsOfSource]) => ({
-        model: await this._getTargetModel(sourceId),
-        ids: idsOfSource,
-      })),
-    );
+    const removals = [...bySource].map(([via, idsOfSource]) => ({ model: this._modelThrough(via), ids: idsOfSource }));
     for (const removal of removals) {
       await removal.model.rmBulk(removal.ids);
     }
@@ -326,12 +496,14 @@ export default class RemoteCombinedModel extends StandardModel {
   }
 
   /**
+   * A record by the source it names, as a create's activity does, through the agreement whose partner app that is. One
+   * a write went through, or a partner relayed, is found through its agreement with findSharedById.
    * @param {string} id
    * @param {string} sourceId
    * @return {Promise}
    */
   override async findById(id: string, sourceId?: string | null) {
-    return (await this._getTargetModel(sourceId)).findById(id);
+    return (await this._createTarget(sourceId)).model.findById(id);
   }
 
   /**
@@ -362,7 +534,7 @@ export default class RemoteCombinedModel extends StandardModel {
     project: Record<string, unknown> | null | false = null,
   ) {
     const sortMap = new Map<string, number>(
-      Object.entries(sort as Record<string, unknown>).map(([key, value]) => [key, Number(value)]),
+      Object.entries(sort ?? {}).map(([key, value]) => [key, sortDirection(value)]),
     );
     if (sortMap.size < 1) sortMap.set('id', 1);
 
@@ -387,17 +559,11 @@ export default class RemoteCombinedModel extends StandardModel {
       skip,
     );
 
-    // When a chunk is sent, we'll inform the routing service of the sourceId.
-    // We're always expecting the first source to be the local model.
-    combinedStream.on('chunkSent', (data: ChunkSentEvent<AdapterDocument>) => {
-      return data.sourceIdx > 0
-        ? this._sdsRouting.inform(
-            this.app.id.toString(),
-            data.chunk.sourceId as string,
-            remotes[data.sourceIdx - 1].dataSharingId.toString(),
-          )
-        : null;
-    });
+    // The first source is the local model, then each partner. Where each record came from is noted as it arrives,
+    // before anything can read it, so a write to it goes back where it was read (sourceOf).
+    combinedStream.on('chunkReceived', ({ chunk, sourceIdx }: ChunkReceivedEvent<AdapterDocument>) =>
+      noteSource(chunk, sourceIdx > 0 ? remotes[sourceIdx - 1].dataSharingId.toString() : null),
+    );
 
     return combinedStream;
   }
@@ -416,13 +582,8 @@ export default class RemoteCombinedModel extends StandardModel {
 
     const combinedStream = new Helpers.Stream.SortedStreams<AdapterDocument>(sources);
 
-    // When a chunk is sent, we'll inform the routing service of the sourceId.
-    combinedStream.on('chunkSent', (data: ChunkSentEvent<AdapterDocument>) =>
-      this._sdsRouting.inform(
-        this.app.id.toString(),
-        data.chunk.sourceId as string,
-        remotes[data.sourceIdx].dataSharingId.toString(),
-      ),
+    combinedStream.on('chunkReceived', ({ chunk, sourceIdx }: ChunkReceivedEvent<AdapterDocument>) =>
+      noteSource(chunk, remotes[sourceIdx].dataSharingId.toString()),
     );
 
     return combinedStream;
@@ -444,15 +605,23 @@ export default class RemoteCombinedModel extends StandardModel {
    */
   override async count(query?: AdapterQuery) {
     // Make a call out to the local datastore and each of the remotes, and sum the results.
-    const sourceReqs: (number | Promise<number>)[] = [];
+    const counts: { source: string; count: unknown }[] = [];
 
-    sourceReqs.push(await this.localModel.count(query));
+    counts.push({ source: 'the local datastore', count: await this.localModel.count(query) });
 
     for await (const remote of this._remoteModels) {
-      sourceReqs.push(await remote.count(query));
+      counts.push({ source: `data sharing ${remote.dataSharingId}`, count: await remote.count(query) });
     }
 
-    return (await Promise.all(sourceReqs)).reduce((acc, val) => acc + val, 0);
+    // A partner's count is whatever it answers: a number given as text is read as one, and anything else is logged and
+    // left out rather than joined on as text
+    return counts.reduce((total, { source, count }) => {
+      const value = typeof count === 'string' && count.trim() !== '' ? Number(count) : count;
+      if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return total + value;
+
+      Logging.logWarn(`Left out a count of ${this.schemaData.name} from ${source} that isn't one: ${String(count)}`);
+      return total;
+    }, 0);
   }
 
   /**

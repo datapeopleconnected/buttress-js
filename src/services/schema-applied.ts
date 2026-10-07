@@ -147,14 +147,20 @@ export class SchemaAppliedWaiter {
   }
 
   private _subscribe() {
-    this._subscription ??= this._nrp.on('app-schema:applied', (json) => {
-      const message = JSON.parse(json) as AppSchemaAppliedMessage;
-      const mine = restProcessIdentity();
-      // Every REST process says so for a change, and only the one this worker belongs to answers its wait
-      if (message.host !== mine.host || message.pid !== mine.pid) return;
+    this._subscription ??= this._nrp
+      .on('app-schema:applied', (json) => {
+        const message = JSON.parse(json) as AppSchemaAppliedMessage;
+        const mine = restProcessIdentity();
+        // Every REST process says so for a change, and only the one this worker belongs to answers its wait
+        if (message.host !== mine.host || message.pid !== mine.pid) return;
 
-      this._waiting.get(message.changeId)?.();
-    });
+        this._waiting.get(message.changeId)?.();
+      })
+      .catch((err: unknown) => {
+        // A subscription that failed isn't kept, so the next change subscribes again
+        this._subscription = undefined;
+        throw err;
+      });
 
     return this._subscription;
   }

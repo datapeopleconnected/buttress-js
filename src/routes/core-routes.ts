@@ -22,6 +22,7 @@ import * as Helpers from '../helpers/index.js';
 import StandardModel from '../model/type/standard.js';
 import { DocumentOf } from '../model/type/tenant-scoped.js';
 import { invalidUpdateError } from '../model/shared.js';
+import { isPlainObject } from '../helpers/schema-definition.js';
 import ActivitySchemaModel from '../model/core/activity.js';
 import TokenSchemaModel, { Token } from '../model/core/token.js';
 import { Services } from '../bootstrap.js';
@@ -113,7 +114,7 @@ abstract class CoreModelRoute<M extends StandardModel<DocumentOf<M>>> extends Ro
 export class CoreSearch<M extends StandardModel<DocumentOf<M>>> extends CoreModelRoute<M> {
   constructor(services: Services) {
     super(services);
-    this.verb = Route.Constants.Verbs.SEARCH;
+    this.verb = Route.Constants.Verbs.QUERY;
   }
 
   override async _validate(req: RequestWithBody<SearchListBody<DocumentOf<M> & object> | undefined>, _res: Response) {
@@ -121,11 +122,7 @@ export class CoreSearch<M extends StandardModel<DocumentOf<M>>> extends CoreMode
     if (Array.isArray(req.body)) throw Helpers.Errors.badRequest('invalid_body');
 
     const body = req.body ?? {};
-    // parseInt takes numbers too, it converts them to a string first
-    const skip = body.skip ? parseInt(body.skip as string) : 0;
-    const limit = body.limit ? parseInt(body.limit as string) : 0;
-    if (isNaN(skip)) throw Helpers.Errors.badRequest('invalid_value_skip');
-    if (isNaN(limit)) throw Helpers.Errors.badRequest('invalid_value_limit');
+    const { skip, limit } = Helpers.searchPaging(body);
 
     const result: QueryParams<DocumentOf<M> & object> = {
       query: this.parse(req, body.query ? [body.query] : []),
@@ -148,7 +145,7 @@ export class CoreSearch<M extends StandardModel<DocumentOf<M>>> extends CoreMode
 export class CoreCount<M extends StandardModel<DocumentOf<M>>> extends CoreModelRoute<M> {
   constructor(services: Services) {
     super(services);
-    this.verb = Route.Constants.Verbs.SEARCH;
+    this.verb = Route.Constants.Verbs.QUERY;
 
     this.activityDescription = this.config.name;
     this.activityBroadcast = false;
@@ -176,6 +173,13 @@ export class CoreCount<M extends StandardModel<DocumentOf<M>>> extends CoreModel
 // A row's updates, as a route has checked them
 type CheckedUpdates = { id: string; body: UpdatePathBody[] };
 
+// Each row's updates, from every item that names it, in the order they're written
+const updatesByRow = (items: CheckedUpdates[]) => {
+  const rows = new Map<string, UpdatePathBody[]>();
+  for (const item of items) rows.set(item.id, [...(rows.get(item.id) ?? []), ...item.body]);
+  return rows;
+};
+
 /**
  * Writes updates by path to a core model's rows. Each row's updates are read through the schema, then a resource's
  * own rules (`updateProblem`), and the rows have to be ones the caller reaches, before any is written; `afterUpdates`
@@ -188,27 +192,34 @@ abstract class CoreUpdates<M extends StandardModel<DocumentOf<M>>> extends CoreM
     this.activityBroadcast = this.config.activityBroadcast ?? true;
   }
 
-  // A resource's own rules for updates its schema takes: the error to refuse them with, or null
-  protected updateProblem(_req: Request, _updates: UpdatePathBody[]): Promise<Error | null> | Error | null {
+  // A resource's own rules for updates its schema takes, every one a request makes to the row `id` in the order they're
+  // written: the error to refuse them with, or null
+  protected updateProblem(
+    _req: Request,
+    _updates: UpdatePathBody[],
+    _id: string,
+  ): Promise<Error | null> | Error | null {
     return null;
   }
 
   // What a resource does once its rows are updated
   protected async afterUpdates(_req: Request, _updated: CheckedUpdates[]): Promise<void> {}
 
-  // A row's updates as the schema reads them, refused if it or the route's rules can't take them
-  protected async checkUpdateBody(req: Request, given: unknown): Promise<UpdatePathBody[]> {
+  // A row's updates as the schema reads them, refused if it can't take them
+  protected readUpdateBody(req: Request, given: unknown): UpdatePathBody[] {
     const { validation, body } = this.rows(req).validateUpdate(given);
     if (!validation.isValid) {
       const err = invalidUpdateError(this.schemaName, validation);
       this.log(`ERROR: ${err.message}`, Route.LogLevel.ERR);
       throw err;
     }
-
-    const problem = await this.updateProblem(req, body);
-    if (problem) throw problem;
-
     return body;
+  }
+
+  // Refuses a request's updates to a row, in the order they're written, that the route's rules can't take
+  protected async checkUpdateRules(req: Request, id: string, updates: UpdatePathBody[]) {
+    const problem = await this.updateProblem(req, updates, id);
+    if (problem) throw problem;
   }
 }
 
@@ -223,8 +234,10 @@ export class CoreUpdateByPath<M extends StandardModel<DocumentOf<M>>> extends Co
 
   override async _validate(req: RequestWithBody<unknown>, _res: Response) {
     const id = this.idOf(req);
+    const updates = this.readUpdateBody(req, req.body);
     // The updates as they're checked
-    req.body = await this.checkUpdateBody(req, req.body);
+    req.body = updates;
+    await this.checkUpdateRules(req, id, updates);
     await this.rows(req).assertExists(id);
     return { id };
   }
@@ -251,10 +264,13 @@ export class CoreBulkUpdate<M extends StandardModel<DocumentOf<M>>> extends Core
       throw Helpers.Errors.badRequest('array_required');
     }
 
-    // Each item's updates as they're checked, which the request's activity keeps too; then every row, in one query
-    for (const item of req.body) item.body = await this.checkUpdateBody(req, item.body);
-    await this.rows(req).assertAllExist(req.body.map((item) => item.id));
-    return req.body as CheckedUpdates[];
+    // Each item's updates as they're checked, which the request's activity keeps too; then each row's, from every item
+    // that names it, as they're written one after another; then every row, in one query
+    for (const item of req.body) item.body = this.readUpdateBody(req, item.body);
+    const checked = req.body as CheckedUpdates[];
+    for (const [id, updates] of updatesByRow(checked)) await this.checkUpdateRules(req, id, updates);
+    await this.rows(req).assertAllExist(checked.map((item) => item.id));
+    return checked;
   }
 
   override async _exec(req: Request, _res: Response, validate: CheckedUpdates[]) {
@@ -365,6 +381,12 @@ export abstract class CoreTokenPolicyProperties<M extends StandardModel<Document
     if (!req.body) {
       this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
       throw Helpers.Errors.badRequest('missing_field');
+    }
+
+    // Properties are named values, which a list isn't
+    if (this.change !== 'clear' && !isPlainObject(req.body)) {
+      this.log(`[${this.name}] The policy properties are not an object`, Route.LogLevel.ERR);
+      throw Helpers.Errors.badRequest('invalid_body', 'The policy properties must be an object');
     }
 
     const id = this.idOf(req);

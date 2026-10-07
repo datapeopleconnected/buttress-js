@@ -70,8 +70,8 @@ const SCENARIOS = {
     request: () => ({ method: 'GET', path: 'car' }),
   },
   search: {
-    description: 'SEARCH cars by name',
-    request: () => ({ method: 'SEARCH', path: 'car', body: { query: { name: 'car 7' } } }),
+    description: 'QUERY cars by name',
+    request: ({ searchMethod }) => ({ method: searchMethod, path: 'car', body: { query: { name: 'car 7' } } }),
   },
   post: {
     description: 'POST one note',
@@ -358,8 +358,15 @@ const setUp = async (port, superToken, server) => {
     body: Array.from({ length: SEED_CARS }, (_, idx) => ({ name: `car ${idx}` })),
   });
 
+  // A build from before QUERY (RFC 10008) only takes searches as SEARCH, the method's old name, so the search
+  // scenario sends that instead and can still be compared across the change.
+  const token = user.tokens[0].value;
+  const { status } = await send(port, token, { method: 'QUERY', path: `${API_PATH}/api/v1/car`, body: { query: {} } });
+  const searchMethod = status === 200 ? 'QUERY' : 'SEARCH';
+  if (searchMethod === 'SEARCH') console.log(`bench: the build answered QUERY with ${status}, so search sends SEARCH`);
+
   // Requests run as a user token under a policy, so access control is part of every measurement.
-  return { token: user.tokens[0].value, cars };
+  return { token, cars, searchMethod };
 };
 
 // ---- Measuring ----
@@ -538,7 +545,13 @@ const main = async () => {
       label: opts.label,
       createdAt: new Date().toISOString(),
       build,
-      settings: { durationS: opts.durationS, rounds: opts.rounds, concurrency: opts.concurrency, seedCars: SEED_CARS },
+      settings: {
+        durationS: opts.durationS,
+        rounds: opts.rounds,
+        concurrency: opts.concurrency,
+        seedCars: SEED_CARS,
+        searchMethod: fixture.searchMethod,
+      },
       environment: {
         node: process.version,
         platform: `${os.platform()} ${os.release()}`,

@@ -78,8 +78,8 @@ libraries flowing on, every value needs a real type:
 ```bash
 npm run test              # build + test:unit + test:e2e (what CI runs)
 npm run test:unit         # mocha over test/unit/**/* — imports compiled dist/, NOT src/
-npm run test:e2e          # wipes the test DB/Redis, boots a real Buttress in INSTALL_MODE, then runs
-                            # test/e2e/index.test.js against it
+npm run test:e2e          # drops the test DB and the test app code's Redis keys, boots a real Buttress in
+                            # INSTALL_MODE, then runs test/e2e/index.test.js against it
 npm run test:io-budgets   # as test:e2e, but only the I/O budget suite (see performance.md)
 npm run bench             # measure dist/'s REST performance into bench-results/ (see performance.md)
 npm run bench:compare -- a.json b.json   # compare two bench results
@@ -99,9 +99,10 @@ npm run test:federation   # boots two Buttress instances and tests data sharing 
   (mocha config is in [.mocharc.cjs](../.mocharc.cjs) — `require: ["test/hooks.js"]` sets up logging
   capture per test via `mochaHooks`).
 - **E2E requires MongoDB + Redis actually running** at whatever `.test.env` points to (see
-  `test:e2e` details below) — `test/before-e2e.js` connects and drops the test database + flushes Redis
-  before every e2e run, then `test/hooks.js` reads `<appData>/super.json` for the install-generated super
-  token (`Config.testToken`) since e2e runs against a fully-installed instance, not mocks.
+  `test:e2e` details below) — `test/before-e2e.js` connects, drops the test database and deletes the
+  `<app code>:*` Redis keys (never FLUSHDB) before every e2e run, then `test/hooks.js` reads
+  `<appData>/super.json` for the install-generated super token (`Config.testToken`) since e2e runs against a
+  fully-installed instance, not mocks. See [Running e2e next to a dev instance](#running-e2e-next-to-a-dev-instance).
   [test/e2e/index.test.js](../test/e2e/index.test.js) is the entry point that requires the individual
   `test/e2e/{rest,sock,lambda,spr,perf}/*.test.js` suites.
 - Env used for tests is `.test.env` (`NODE_ENV=test`) — see `helpers/config.ts`, which loads
@@ -119,14 +120,39 @@ npm run test:federation   # boots two Buttress instances and tests data sharing 
   that fails because of a known gap names its plan item. `FEDERATION_WORKERS=2` runs the stacks with workers,
   `FEDERATION_LOG_LEVEL=silly` logs more, and each stack's logs are kept (and named) when a test fails or
   `FEDERATION_KEEP=1`. The singletons (`Model`, `Datastore`, `Config`) are why the stacks are processes, not
-  bootstraps in the mocha process as in e2e.
+  bootstraps in the mocha process as in e2e. CI runs it as the Tests workflow's `federation-tests` job, once with
+  `FEDERATION_WORKERS=0` and once with 2, keeping the stacks' work folders under the runner's temp folder and
+  uploading their logs when it fails; the docker job waits for it.
 - **Coverage:** `coverage:unit` (the CI coverage job) and `coverage` use c8, whose figures read high: it
   counts licence headers, comments and types as covered lines in any file that loads, and only counts
   branches inside functions that ran. For real numbers use `npm run coverage:istanbul` (add `-- unit` or
   `-- e2e` for one suite). It builds, runs the suites with `dist/` instrumented on load by a loader hook
   ([test/istanbul/](../test/istanbul), so `dist/` itself is untouched), and prints per-suite and combined
   coverage of `src/*.ts`; the HTML report lands in `coverage/istanbul/lcov-report/`. Its e2e step is plain
-  `test:e2e`, so it needs MongoDB + Redis and wipes them the same way.
+  `test:e2e`, so it needs MongoDB + Redis and clears them the same way.
+
+### Running e2e next to a dev instance
+
+`npm run test:e2e` can run while a dev Buttress (`.development.env`) uses the same MongoDB and Redis servers,
+as long as the two configs differ in these ways:
+
+| Shared thing | How the test run stays apart |
+| --- | --- |
+| MongoDB | Its own database, `<app code>-test` (or the connection string's path), which is the only one dropped. |
+| Redis keys | Its own database index: set `BUTTRESS_REDIS_URL=redis://localhost:6379/15` in `.test.env`. Only `<app code>:*` keys are deleted in any case. |
+| Redis pub/sub | Channels ignore the database index, so they're scoped by app code instead: NRP's are `<app code>::<channel>`, Socket.IO's adapter uses the key `<app code>:socket.io`. The test app code must differ from dev's. |
+| Lambda folders | `paths.lambda.{code,plugins,bundles}` have test variants under `<appData>/test/lambda/`. The Lambda process deletes its bundles folder at boot, and the suites write a `lambda-HEAD` stub into the code folder. |
+| Ports and host | Test REST/Socket ports (8022/8032) and host (`test.buttress.localhost`) differ from dev's. |
+
+`test/before-e2e.js` checks this before it touches anything. It reads `.development.env` from this checkout and,
+in a git worktree, from the main checkout, resolves it as a dev process would, and refuses to run if the
+MongoDB database, Redis database, app code, REST URL, a listen port, the app data folder or a lambda folder
+matches. It also refuses if `NODE_ENV` isn't `test` or `BUTTRESS_APP_PATH` is unset. Values that a dev process
+gets from its shell environment rather than `.development.env` aren't seen.
+
+A worktree has no `.test.env` (it's gitignored). Copy the main checkout's and set `BUTTRESS_APP_PATH` to the
+worktree, so the run uses the worktree's `app_data/test` and the lambda suites clone the worktree's code. Two
+e2e runs at once still collide on the test ports and database.
 
 ## Running from source (non-Docker)
 
@@ -162,6 +188,7 @@ Notable config paths used throughout the code (`Config.<path>`, all resolved fro
 — controls which instance of a multi-instance REST/Socket deployment owns primary-only responsibilities),
 `lambda.{apiWorkers,pathMutationWorkers,cronWorkers,developmentEmailAddress}`,
 `timeout.{lambdaManager,lambdasRunner,shutdown}`, `paths.{appData,plugins,lambda.{code,plugins,bundles}}`.
+`paths.logs`, `paths.appData` and `paths.lambda.*` have `dev`/`prod`/`test` variants, picked by `NODE_ENV`.
 
 ## Docker
 

@@ -80,6 +80,7 @@ export class RoutesMiddleware {
       authUser: null,
       authApp: null,
       token: null,
+      callerToken: null,
       clientSessionId: null,
       isPluginPath: false,
       ac: {
@@ -247,6 +248,9 @@ export class RoutesMiddleware {
           });
           req.context.token = token;
           req.context.authApp = apiLambdaApp;
+
+          // Still the caller's, though the request is made with the lambda's token; none for a PUBLIC endpoint
+          req.context.callerToken = reqToken;
         }
       }
 
@@ -254,6 +258,7 @@ export class RoutesMiddleware {
 
       if (useUserToken) {
         req.context.token = reqToken ? reqToken : await this._getProvidedToken(req);
+        req.context.callerToken = isLambdaAPICall ? req.context.token : req.context.callerToken;
       }
 
       if (!isLambdaAPICall && req.context.token?._lambdaId) {
@@ -402,7 +407,7 @@ export class RoutesMiddleware {
     }
     if (context.token.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.USER) {
       res.header('Access-Control-Allow-Origin', '*');
-      res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,SEARCH,OPTIONS');
+      res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,QUERY,SEARCH,OPTIONS');
       res.header('Access-Control-Allow-Headers', 'content-type');
       Logging.logTimer('_configCrossDomain:end-app-token', context.timer, Logging.Constants.LogLevel.SILLY, context.id);
       next();
@@ -465,7 +470,7 @@ export class RoutesMiddleware {
     }
 
     res.header('Access-Control-Allow-Origin', req.header('Origin'));
-    res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,SEARCH,OPTIONS');
+    res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,QUERY,SEARCH,OPTIONS');
     res.header('Access-Control-Allow-Headers', 'content-type');
 
     if (req.method === 'OPTIONS') {

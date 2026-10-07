@@ -68,6 +68,15 @@ describe('model/core/TokenSchemaModel:createTokenString', () => {
     assert.match(token, /^[A-Za-z0-9]{36}$/);
   });
 
+  it('picks its characters from all 62 letters and digits', () => {
+    const { model } = createModel();
+    const seen = new Set();
+    // 2000 tokens hold 72,000 characters, about 1,160 of each, so one never seen isn't chance
+    for (let i = 0; i < 2000; i++) for (const char of model.createTokenString()) seen.add(char);
+
+    assert.strictEqual(seen.size, 62);
+  });
+
   it('generates a different token on each call', () => {
     const { model } = createModel();
     const a = model.createTokenString();
@@ -130,13 +139,16 @@ describe('model/core/TokenSchemaModel:setPolicyPropertiesById', () => {
     assert.ok(nrp.emit.calledWith('app-routes:bust-cache', '{}'));
   });
 
-  it('strips a stray query key from the policy properties before saving', async () => {
+  // It was dropped, and from the object the caller gave too
+  it('stores a property named `query` as it stores any other, leaving the caller its object', async () => {
     const { model } = createModel();
+    const properties = { role: 'admin', query: 'reports' };
 
-    await model.setPolicyPropertiesById('token-1', { role: 'admin', query: { should: 'not-persist' } });
+    await model.setPolicyPropertiesById('token-1', properties);
 
     const [, update] = model.adapter.updateById.firstCall.args;
-    assert.deepStrictEqual(update.$set.policyProperties, { role: 'admin' });
+    assert.deepStrictEqual(update.$set.policyProperties, { role: 'admin', query: 'reports' });
+    assert.deepStrictEqual(properties, { role: 'admin', query: 'reports' });
   });
 });
 
@@ -166,14 +178,51 @@ describe('model/core/TokenSchemaModel:updatePolicyProperties', () => {
     assert.deepStrictEqual(update.$set.policyProperties, { role: 'admin' });
   });
 
-  it('strips a stray query key from the incoming policy properties', async () => {
+  // SR-DPC-001 D6: they were collected onto an array, which took `length` as its own and dropped `__proto__`
+  it('stores every property under its name as given, `length` and `__proto__` included', async () => {
     const { model } = createModel();
-    const token = { id: 'token-1', policyProperties: {} };
+    const token = { id: 'token-1', policyProperties: { role: 'user' } };
 
-    await model.updatePolicyProperties(token, { role: 'admin', query: { should: 'not-persist' } });
+    await model.updatePolicyProperties(token, JSON.parse('{"length": 5, "__proto__": "admin", "constructor": "x"}'));
 
     const [, update] = model.adapter.updateById.firstCall.args;
-    assert.deepStrictEqual(update.$set.policyProperties, { role: 'admin' });
+    const stored = update.$set.policyProperties;
+    assert.deepStrictEqual(Object.entries(stored), [['role', 'user'], ['length', 5], ['__proto__', 'admin'], ['constructor', 'x']]);
+    assert.strictEqual(Object.getPrototypeOf(stored), Object.prototype);
+  });
+
+  it("doesn't throw for a `length` that isn't a valid array length", async () => {
+    const { model } = createModel();
+
+    await model.updatePolicyProperties({ id: 'token-1', policyProperties: {} }, { length: 'a' });
+
+    const [, update] = model.adapter.updateById.firstCall.args;
+    assert.deepStrictEqual(update.$set.policyProperties, { length: 'a' });
+  });
+
+  it('gives a `__proto__` object no way to the prototype of what it stores, or of any object', async () => {
+    const { model } = createModel();
+
+    await model.updatePolicyProperties({ id: 'token-1', policyProperties: {} }, JSON.parse('{"__proto__": {"polluted": true}}'));
+
+    const [, update] = model.adapter.updateById.firstCall.args;
+    const stored = update.$set.policyProperties;
+    assert.deepStrictEqual(Object.getOwnPropertyDescriptor(stored, '__proto__').value, { polluted: true });
+    assert.strictEqual(stored.polluted, undefined);
+    assert.strictEqual({}.polluted, undefined);
+  });
+
+  // A `query` given was dropped. The remove route gives the token's properties less the ones going, so a token lost its
+  // own `query` whenever another of its properties was removed.
+  it('keeps a property named `query`, given or kept from the token', async () => {
+    const { model } = createModel();
+    const remaining = { query: 'reports' };
+
+    await model.updatePolicyProperties({ id: 'token-1', policyProperties: {} }, { role: 'admin', query: 'reports' });
+    await model.updatePolicyProperties({ id: 'token-2', policyProperties: remaining }, remaining);
+
+    const stored = model.adapter.updateById.getCalls().map((call) => call.args[1].$set.policyProperties);
+    assert.deepStrictEqual(stored, [{ role: 'admin', query: 'reports' }, { query: 'reports' }]);
   });
 });
 

@@ -47,6 +47,12 @@ if (PolicyPropertyList.grade) {
   PolicyPropertyList.grade.push(0);
 }
 
+// The selection-array user is given 'none' alongside 'array', which no policy selects by, and every value a token is
+// given has to be one the app lists (SR-DPC-001 S5)
+if (PolicyPropertyList.policySelection) {
+  PolicyPropertyList.policySelection.push('none');
+}
+
 let REST_PROCESS = null;
 
 const testEnv = {
@@ -458,7 +464,7 @@ describe('Policy', async () => {
       await expectEventually(async () => {
         const res = await bjsReq({
           url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
-          method: 'SEARCH',
+          method: 'QUERY',
           headers: {'Content-Type': 'application/json'},
         }, testEnv.users.basic1.tokens[0].value);
 
@@ -476,7 +482,7 @@ describe('Policy', async () => {
       await expectEventually(async () => {
         const res = await bjsReq({
           url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation/count`,
-          method: 'SEARCH',
+          method: 'QUERY',
           headers: {'Content-Type': 'application/json'},
         }, testEnv.users.basic1.tokens[0].value);
 
@@ -666,7 +672,8 @@ describe('Policy', async () => {
     });
   });
 
-  // Policy which has mutiple non-mergable policies can return multiple results
+  // A token whose policy configs can't be merged (pt1-1: every car's name; Car 0's name and colour) gets each car once,
+  // with the properties of every config that reads it (BUG-17)
   describe('Multi-Policy results', async () => {
     before(async function() {
       // Create a user to test with.
@@ -687,7 +694,7 @@ describe('Policy', async () => {
       // Delete the user
     });
 
-    it ('Should return multiple results', async function() {
+    it ('Should return each car once, with the properties of every config that reads it', async function() {
       const [ token ] = testEnv.users.multiPol1.tokens;
       const cars = await bjsReq({
         url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
@@ -695,11 +702,18 @@ describe('Policy', async () => {
         headers: {'mode': 'no-cors'},
       }, token.value);
 
-      // The results should contain two items with name "Car 0". One will include colour
-      const car0 = cars.filter((car) => car.name === 'Car 0');
-      assert(car0.length === 2, `Expected 2 but got ${car0.length}`);
-      const car0colourIdx = car0.findIndex((car) => car.color !== undefined);
-      assert(car0colourIdx !== -1, `Expected one of the cars to have a colour but got ${car0[car0colourIdx].color}`);
+      const ids = cars.map((car) => car.id);
+      assert.strictEqual(new Set(ids).size, ids.length, `A car came back more than once: ${ids.join(', ')}`);
+      assert.strictEqual(cars.length, testEnv.cars.filter((car) => car.name.startsWith('Car ')).length);
+
+      // Car 0 has its colour, from the config that reads Car 0; the others have only their names
+      const [car0, ...others] = [...cars].sort((a, b) => (a.name === 'Car 0' ? -1 : b.name === 'Car 0' ? 1 : 0));
+      assert.strictEqual(car0.name, 'Car 0');
+      assert.strictEqual(car0.color, testEnv.cars.find((car) => car.name === 'Car 0').color);
+      for (const car of others) {
+        // Every row also names the app it came from
+        assert.deepStrictEqual(Object.keys(car).filter((key) => key !== 'sourceId').sort(), ['id', 'name'], JSON.stringify(car));
+      }
     });
   });
 
@@ -748,15 +762,18 @@ describe('Policy', async () => {
       });
     });
 
+    // The subscriber's policy grants QUERY and the missing user's SEARCH: each grants the other's method too
     it('Should only return the posts on those boards, with their ids looked up through the env', async function() {
       await expectEventually(async () => {
-        for (const method of ['GET', 'SEARCH']) {
+        for (const method of ['GET', 'QUERY', 'SEARCH']) {
           const res = await userRequest(testEnv.users.envSubscriber, 'post', method);
           assert.deepStrictEqual(res.map((post) => post.content).sort(), ['One', 'Two'], method);
         }
 
-        const count = await userRequest(testEnv.users.envSubscriber, 'post/count', 'SEARCH');
-        assert.strictEqual(count, 2);
+        for (const method of ['QUERY', 'SEARCH']) {
+          const count = await userRequest(testEnv.users.envSubscriber, 'post/count', method);
+          assert.strictEqual(count, 2, method);
+        }
       });
     });
 
@@ -765,8 +782,10 @@ describe('Policy', async () => {
         const res = await userRequest(testEnv.users.envMissing, 'post', 'GET');
         assert.deepStrictEqual(res, []);
 
-        const count = await userRequest(testEnv.users.envMissing, 'post/count', 'SEARCH');
-        assert.strictEqual(count, 0);
+        for (const method of ['QUERY', 'SEARCH']) {
+          const count = await userRequest(testEnv.users.envMissing, 'post/count', method);
+          assert.strictEqual(count, 0, method);
+        }
       });
     });
   });

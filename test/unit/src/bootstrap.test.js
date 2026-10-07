@@ -420,4 +420,83 @@ describe('bootstrap-lambda:worker types', () => {
     assert.strictEqual(await Promise.race([started, waiting]), 'started');
     assert.strictEqual(worker.__lambdaWorkerProcess.lambdaType, 'CRON');
   });
+
+  describe('with several Lambda processes', () => {
+    // Every Lambda process numbers its cluster workers from 1, so a worker of each is cluster worker 1
+    function createClusterWorker(nrp) {
+      const isWorker = sinon.stub(cluster, 'isWorker').value(true);
+      cluster.worker = { id: 1 };
+      try {
+        const worker = new BootstrapLambda();
+        worker.workerProcesses = 1;
+        worker.__nrp = nrp;
+        worker.__services.set('nrp', nrp);
+        return worker;
+      } finally {
+        delete cluster.worker;
+        isWorker.restore();
+      }
+    }
+
+    async function startPrimaryMain(nrp) {
+      Object.assign(Config.lambda, { apiWorkers: '1', pathMutationWorkers: '0', cronWorkers: '1' });
+      Config.rest.app = 'primary';
+      sinon.stub(Model, 'initCoreModels').resolves();
+      sinon.stub(LambdaManager.prototype, 'init').resolves();
+      sinon.stub(LambdaRunner.prototype, 'init').resolves();
+
+      const main = new BootstrapLambda();
+      main.__nrp = nrp;
+      main.__services.set('nrp', nrp);
+      // Single instance mode, so the main hands out types without forking workers of its own
+      main.workerProcesses = 0;
+      await main.__initMain();
+      return main;
+    }
+
+    it("gives each process's worker 1 an id of its own", () => {
+      const nrp = createNrp();
+      const workers = [createClusterWorker(nrp), createClusterWorker(nrp)];
+
+      assert.notStrictEqual(workers[0].id, workers[1].id);
+      assert.ok(workers.every((worker) => worker.id !== '1'));
+    });
+
+    it("leaves other process types' workers with their cluster id", () => {
+      sinon.stub(cluster, 'isWorker').value(true);
+      cluster.worker = { id: 1 };
+      try {
+        assert.strictEqual(new Bootstrap().id, '1');
+      } finally {
+        delete cluster.worker;
+      }
+    });
+
+    it('gives the workers called 1 in two processes the types they were each handed', async () => {
+      const nrp = createNrp();
+      const workers = [createClusterWorker(nrp), createClusterWorker(nrp)];
+      await startPrimaryMain(nrp);
+
+      await Promise.all(workers.map((worker) => worker.__initWorker()));
+
+      const types = workers.map((worker) => worker.__lambdaWorkerProcess.lambdaType);
+      assert.deepStrictEqual([...types].sort(), ['API_ENDPOINT', 'CRON']);
+    });
+
+    it("gives back the type of the worker that exited, not of the other process's worker 1", async () => {
+      const nrp = createNrp();
+      const workers = [createClusterWorker(nrp), createClusterWorker(nrp)];
+      const main = await startPrimaryMain(nrp);
+      for (const worker of workers) await worker.__initWorker();
+      const exited = workers.find((worker) => worker.__lambdaWorkerProcess.lambdaType === 'API_ENDPOINT');
+
+      // Its main gives back the id the worker reported with worker:initiated
+      await nrp.emit('lambdaProcessMain:worker-exited', JSON.stringify({ id: exited.id }));
+
+      const replacement = createClusterWorker(nrp);
+      await replacement.__initWorker();
+      assert.strictEqual(replacement.__lambdaWorkerProcess.lambdaType, 'API_ENDPOINT');
+      assert.strictEqual(main.__cronWorkers, 1);
+    });
+  });
 });

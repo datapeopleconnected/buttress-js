@@ -25,7 +25,7 @@
     },
     "config": [
       {
-        "verbs": "GET",
+        "verbs": ["GET"],
         "schema": ["app"],
         "query": {
           "id": {
@@ -34,7 +34,7 @@
         }
       },
       {
-        "verbs": "GET",
+        "verbs": ["GET"],
         "schema": ["user"],
         "query": {
           "_appId": {
@@ -43,7 +43,7 @@
         }
       },
       {
-        "verbs": ["SEARCH"],
+        "verbs": ["QUERY"],
         "schema": ["token", "user"],
         "query": [
           {

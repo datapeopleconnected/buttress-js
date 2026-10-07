@@ -20,7 +20,6 @@ interface Config {
     title: string;
     description: string;
     code: string;
-    version: string;
     protocol: string;
     host: string;
     apiPrefix: string;

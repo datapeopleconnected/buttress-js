@@ -97,10 +97,24 @@ export class Stack {
       await mongo.close();
     }
 
+    await this._deleteRedisKeys(`${this.code}:*`);
+  }
+
+  // Forgets which app each of the stack's agreements reaches, as an agreement paired before pairing recorded it has
+  async forgetPartnerApps() {
+    const mongo = await MongoClient.connect(mongoUrl, { serverSelectionTimeoutMS: 5000 });
+    try {
+      await mongo.db(this.dbName).collection('appDataSharing').updateMany({}, { $set: { 'remoteApp.appId': null } });
+    } finally {
+      await mongo.close();
+    }
+  }
+
+  async _deleteRedisKeys(pattern) {
     const redis = createClient({ url: redisUrl });
     await redis.connect();
     try {
-      for await (const keys of redis.scanIterator({ MATCH: `${this.code}:*`, COUNT: 500 })) {
+      for await (const keys of redis.scanIterator({ MATCH: pattern, COUNT: 500 })) {
         const batch = Array.isArray(keys) ? keys : [keys];
         if (batch.length) await redis.del(batch);
       }

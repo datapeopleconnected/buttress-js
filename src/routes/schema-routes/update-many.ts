@@ -15,7 +15,7 @@
  */
 import { Response, Request } from 'express';
 import { QueryParams } from '../../types/bjs-query.js';
-import { UpdatePathBody } from '../../types/datastore.js';
+import { AdapterDocument, UpdatePathBody } from '../../types/datastore.js';
 
 import Route from '../route.js';
 import * as Helpers from '../../helpers/index.js';
@@ -29,15 +29,20 @@ import { invalidUpdateError } from '../../model/shared.js';
 import * as ACM from '../../access-control/models-access.js';
 import StandardModel from '../../model/type/standard.js';
 import type { RequestWithBody } from '../../types/routes.js';
+import { pickWriteTarget, WriteTarget } from './write-target.js';
 
 // One item of the request body: the updates for one entity. _validate records in `validation` whether they can be
-// applied.
+// applied, and in `via` where the entity was read, so they're applied there.
 type UpdateManyBody = {
   id: string;
   sourceId?: string;
   body: UpdatePathBody | UpdatePathBody[];
   validation?: true | Refusal;
+  via?: string | null;
 };
+
+// Where each applied item's entity was changed, for its activity: the agreement it was read through, or null
+const changedThrough = new WeakMap<object, string | null>();
 
 // Why an item wasn't applied: its error's status and body, as a request refused for it would be answered
 type Refusal = { status: number } & Helpers.Errors.ApiErrorBody;
@@ -73,7 +78,7 @@ export default class UpdateMany extends Route {
 
     // Each item is validated and applied on its own, so a refused item doesn't stop the others, even ones that update
     // the same entity. Each entity is only checked once.
-    const updatable = new Map<string, boolean>();
+    const targets = new Map<string, WriteTarget | Helpers.Errors.ApiError | null>();
     for await (const update of req.body as UpdateManyBody[]) {
       const { validation, body } = model.validateUpdate(update.body);
       update.body = body;
@@ -85,9 +90,15 @@ export default class UpdateMany extends Route {
       }
 
       const key = `${update.sourceId}/${update.id}`;
-      if (!updatable.has(key)) updatable.set(key, await this.__isUpdatable(req, model, update.id, update.sourceId));
+      if (!targets.has(key)) targets.set(key, await this.__updateTarget(req, model, update.id, update.sourceId));
+      const target = targets.get(key);
+      if (target instanceof Helpers.Errors.ApiError) {
+        update.validation = refusal(target);
+        this.log(update.validation.message, Route.LogLevel.ERR, req.context.id);
+        continue;
+      }
       // One outside the caller's policies is answered as one that doesn't exist
-      if (!updatable.get(key)) {
+      if (!target) {
         update.validation = refusal(
           model.isValidId(update.id)
             ? Helpers.Errors.entityNotFound(this.schemaName ?? 'entity', update.id)
@@ -97,29 +108,41 @@ export default class UpdateMany extends Route {
         continue;
       }
 
+      update.via = target.via;
       update.validation = true;
     }
 
     return req.body;
   }
 
-  // Whether the entity exists and is inside the caller's access-control scope.
-  async __isUpdatable(req: Request, model: StandardModel, id: string, sourceId?: string) {
+  // The entity an item is for, inside the caller's access-control scope, and where it was read; null when there's none,
+  // or the error to refuse the item with when it can't be read or told apart.
+  async __updateTarget(
+    req: Request,
+    model: StandardModel,
+    id: string,
+    sourceId?: string,
+  ): Promise<WriteTarget | Helpers.Errors.ApiError | null> {
     let objectId;
     try {
       objectId = model.createId(id);
     } catch (_err) {
-      return false;
+      return null;
     }
 
-    if (!(await model.exists(id, sourceId))) return false;
-
-    const findParams: QueryParams<{ id: unknown }> = { query: { id: objectId }, limit: 1, skip: 0 };
-    const rxsScoped = await ACM.find(model, findParams, req.context.ac);
     try {
-      return Boolean(await Helpers.streamFirst(rxsScoped));
-    } catch (_err) {
-      return false;
+      const findParams: QueryParams<{ id: unknown }> = { query: { id: objectId }, skip: 0 };
+      const found = await Helpers.streamAll<AdapterDocument>(await ACM.find(model, findParams, req.context.ac));
+      const target = pickWriteTarget(model, found, {
+        appId: this._dataApp(req).id ?? '',
+        schemaName: this.schemaName ?? 'entity',
+        id,
+        sourceId,
+      });
+      if (!target || !(await model.exists(id, target.via))) return null;
+      return target;
+    } catch (err: unknown) {
+      return Helpers.Errors.toApiError(err);
     }
   }
 
@@ -138,8 +161,10 @@ export default class UpdateMany extends Route {
       // access-control scope) must not be applied, only reported back.
       if (body.validation === true) {
         try {
-          const result = await model.updateByPath(body.body, body.id, body.sourceId);
-          output.push({ id: body.id, sourceId: body.sourceId, results: result });
+          const result = await model.updateByPath(body.body, body.id, body.via);
+          const item = { id: body.id, sourceId: body.sourceId, results: result };
+          changedThrough.set(item, body.via ?? null);
+          output.push(item);
           continue;
         } catch (err: unknown) {
           // An item whose write fails is reported like a refused one, and the rest carry on. Marking it refused on the
@@ -172,6 +197,20 @@ export default class UpdateMany extends Route {
     const applied = (result as { results: unknown }[]).filter((item) => item.results !== null);
     if (applied.length < 1) return;
 
+    // So the SPR finds each changed record where it was changed, by its place in the activity
+    const vias = applied.map((item) => changedThrough.get(item) ?? null);
+    if (vias.some(Boolean)) req.context.dataShareIds = vias;
+
     return super._broadcast(req, res, applied, path, isSuper);
+  }
+
+  // Each item's results are an update's changes
+  override _withoutPrivate(result: unknown): unknown {
+    if (!Array.isArray(result)) return super._withoutPrivate(result);
+    return (result as { results: unknown }[]).map((item) =>
+      Array.isArray(item.results)
+        ? { ...item, results: Helpers.Schema.stripPrivateChanges(item.results, this._privatePaths) }
+        : item,
+    );
   }
 }

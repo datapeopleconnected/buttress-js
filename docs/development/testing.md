@@ -66,9 +66,23 @@ Then run:
 npm run test:e2e
 ```
 
+## Federation Tests
+
+`npm run test:federation` starts two Buttress instances, pairs an app on each through a real data sharing
+agreement, and tests reads, writes, realtime, policy-limited sharing and deactivation between them. It builds
+first, and needs MongoDB and Redis, which it finds at `FEDERATION_MONGO_URL` and `FEDERATION_REDIS_URL` (by default
+`mongodb://localhost:27017` and `redis://localhost:6379`). Each instance has its own database and Redis prefix
+(`bjs-fed-a`, `bjs-fed-b`), and the tests clear only those. `FEDERATION_WORKERS=2` runs each instance with two
+workers.
+
+```bash
+FEDERATION_MONGO_URL=mongodb://localhost:27018 FEDERATION_REDIS_URL=redis://localhost:6380 npm run test:federation
+```
+
 ## CI Behavior
 
-In CI, the tests workflow runs unit and E2E tests.
+In CI, the tests workflow runs unit, E2E and federation tests, the federation tests once without workers and once
+with two.
 
 Docker image publishing is triggered only after successful test completion on push events:
 

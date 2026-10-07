@@ -21,12 +21,15 @@ import * as Helpers from '../../helpers/index.js';
 import { Schema } from '../../helpers/schema.js';
 import TokenSchemaModel, { PolicyProperties, Token } from './token.js';
 import { Services } from '../../bootstrap.js';
+import { AdapterDocument, UpdatePathBody } from '../../types/datastore.js';
 
 // A type rather than an interface, so it's assignable to AdapterDocument
 export type User = {
   id: string;
   auth: Array<UserAuth>;
   _appId: string;
+  // See UserSchemaModel.authKeys
+  _authKeys?: string[];
 };
 
 export interface UserAuth {
@@ -93,6 +96,13 @@ type UserWithTokens = User & {
     policyProperties: Token['policyProperties'];
   }>;
 };
+
+// AddUser refuses a user that one of the app's users already has an auth entry of, as does the datastore
+export const userAlreadyExists = () => Helpers.Errors.badRequest('user_already_exists_with_that_name');
+
+// The datastore refusing a write because another of the app's users has one of its auth keys
+const isAuthKeyDuplicate = (err: unknown) =>
+  err instanceof Helpers.Errors.ApiError && err.code === 'duplicate' && err.details?.path === '_authKeys';
 
 /**
  * Constants
@@ -213,8 +223,57 @@ export default class UserSchemaModel extends StandardModel<User> {
           __required: true,
           __allowUpdate: false,
         },
+        // Worked out from auth by the model, see authKeys; unique, so two creates at once can't both store a user
+        _authKeys: {
+          __type: 'array',
+          __itemtype: 'string',
+          __allowUpdate: false,
+          __private: true,
+          __unique: true,
+        },
       },
     };
+  }
+
+  /**
+   * The keys a user's auth entries claim within their app, one for each entry's app and id and one for its app and
+   * email, for what the entry has. No two of an app's users may share one, which is what AddUser checks for, and the
+   * datastore holds to under `_authKeys`'s unique index. A user may repeat one of their own.
+   * @param {string} appId - the Buttress app the user belongs to
+   * @param {unknown} auth - the user's auth entries, as stored
+   * @return {string[]}
+   */
+  static authKeys(appId: string, auth: unknown): string[] {
+    if (!Array.isArray(auth)) return [];
+
+    const given = (value: unknown): value is string => typeof value === 'string' && value !== '';
+    return auth.flatMap((item: unknown) => {
+      if (item === null || typeof item !== 'object') return [];
+      const entry = item as Partial<UserAuth>;
+      const app = entry.app ?? '';
+      return [
+        ...(given(entry.appId) ? [JSON.stringify([appId, app, 'appId', entry.appId])] : []),
+        ...(given(entry.email) ? [JSON.stringify([appId, app, 'email', entry.email])] : []),
+      ];
+    });
+  }
+
+  override get derivedFrom() {
+    return ['auth', '_appId'];
+  }
+
+  override deriveFields(entity: AdapterDocument) {
+    return { _authKeys: UserSchemaModel.authKeys(String(entity._appId), entity.auth) };
+  }
+
+  // A duplicate auth key means the update gives the user an auth entry another of the app's users has
+  override async updateByPath(body: UpdatePathBody | UpdatePathBody[], id: string, via: string | null = null) {
+    try {
+      return await super.updateByPath(body, id, via);
+    } catch (err: unknown) {
+      if (isAuthKeyDuplicate(err)) throw userAlreadyExists();
+      throw err;
+    }
   }
 
   // Pre-lambda user addition
@@ -328,9 +387,14 @@ export default class UserSchemaModel extends StandardModel<User> {
       })),
     };
 
-    const rxsUser = await super.add(userBody, {
-      _appId: internals._appId,
-    });
+    // A user stored since the route looked has the same auth, if the datastore refuses one of its auth keys
+    const rxsUser = await super
+      .add(userBody, {
+        _appId: internals._appId,
+      })
+      .catch((err: unknown) => {
+        throw isAuthKeyDuplicate(err) ? userAlreadyExists() : err;
+      });
     const user = (await Helpers.streamFirst<User>(rxsUser)) as UserWithTokens;
 
     user.tokens = [];
@@ -414,8 +478,9 @@ export default class UserSchemaModel extends StandardModel<User> {
     auth.tokenSecret = updated.tokenSecret;
     auth.refreshToken = updated.refreshToken;
 
-    const update: Record<string, UserAuth> = {};
+    const update: Record<string, UserAuth | string[]> = {};
     update[`auth.${authIdx}`] = auth;
+    update._authKeys = UserSchemaModel.authKeys(user._appId, user.auth);
     return super.updateById(user.id, update).then(() => true);
   }
 

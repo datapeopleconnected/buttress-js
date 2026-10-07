@@ -163,6 +163,10 @@ describe('Error contract', async () => {
 			404, 'unknown_lambda_endpoint'],
 		['a system token for an admin route, given in the URL', () => [`${ENDPOINT.REST}/api/v1/admin/activate/${Config.testToken}`, { method: 'GET' }],
 			400, 'token_in_url_not_supported'],
+		['an admin install with neither a token nor a body', () => [`${ENDPOINT.REST}/api/v1/admin/install-lambda`, { method: 'POST' }],
+			401, 'missing_token'],
+		['an admin install with a system token but no body', () => [`${ENDPOINT.REST}/api/v1/admin/install-lambda`, { method: 'POST' }, Config.testToken],
+			400, 'invalid_body'],
 
 		// Ids that name nothing the caller can reach, and ids that can't be one
 		['a policy id nothing has', () => [core(`policy/${NOBODYS_ID}`), { method: 'GET' }, appToken()],
@@ -181,6 +185,8 @@ describe('Error contract', async () => {
 			404, 'not_found', () => ({ schema: 'secureStore', id: NOBODYS_ID })],
 		['a data sharing agreement id nothing has', () => [core(`app-data-sharing/${NOBODYS_ID}`), { method: 'GET' }, appToken()],
 			404, 'not_found'],
+		['a policy property list for an api path no app has', () => [core('app/policy-property-list/no-such-app-path'), { method: 'GET' }, Config.testToken],
+			404, 'not_found', { schema: 'app', apiPath: 'no-such-app-path' }],
 		['a note id nothing has', () => [notes(`/${NOBODYS_ID}`), { method: 'GET' }, appToken()],
 			404, 'not_found', () => ({ schema: 'note', id: NOBODYS_ID })],
 		["another app's note id", () => [notes(`/${testEnv.otherNote.id}`), { method: 'GET' }, appToken()],
@@ -197,12 +203,15 @@ describe('Error contract', async () => {
 			400, 'invalid_value', {
 				schema: 'note', path: 'done', issues: [{ path: 'done', code: 'type', expected: 'boolean', received: 'string' }],
 			}],
-		['a search on a flag it cannot read', () => [notes(), { method: 'SEARCH', headers: json, body: JSON.stringify({ query: { done: 'banana' } }) }, appToken()],
+		['a search on a flag it cannot read', () => [notes(), { method: 'QUERY', headers: json, body: JSON.stringify({ query: { done: 'banana' } }) }, appToken()],
 			400, 'invalid_value', { path: 'done', expected: 'boolean' }],
 		['a field a strict schema does not define', () => [`${ENDPOINT.REST}/${testEnv.apps.app.apiPath}/api/v1/crate`, post({ label: 'a', extra: 1 }), appToken()],
 			400, 'unknown_path', { schema: 'crate', path: 'extra', issues: [{ path: 'extra', code: 'unknown_path' }] }],
 		['a schema with a misspelt property key', () => [core('app/schema'), put([{ name: 'note', type: 'collection', properties: { text: { __type: 'string', __requried: true } } }]), appToken()],
 			400, 'invalid_schema', { schema: 'note', issues: [{ path: 'text.__requried', code: 'unknown_path' }] }],
+		// SR-DPC-001 R15: it would refuse every create that left the date out
+		['a schema with a date default that is not a date', () => [core('app/schema'), put([{ name: 'note', type: 'collection', properties: { due: { __type: 'date', __default: 'garbage' } } }]), appToken()],
+			400, 'invalid_schema', { schema: 'note', issues: [{ path: 'due.__default', code: 'type', expected: 'date' }] }],
 		['a policy whose config has no query', () => [core('policy'), post({ name: 'no-query', version: '1', selection: { role: { '@eq': 'NOBODY' } }, config: [{ verbs: ['GET'], schema: ['note'] }] }), appToken()],
 			400, 'invalid_policy', { issues: [{ path: 'config.0.query', code: 'required' }] }],
 		['a policy whose priority is not a number', () => [core('policy'), post({ name: 'bad-priority', version: '1', priority: 'high', selection: { role: { '@eq': 'NOBODY' } }, config: [{ verbs: ['GET'], schema: ['note'], query: { access: '%FULL_ACCESS%' } }] }), appToken()],
@@ -223,6 +232,9 @@ describe('Error contract', async () => {
 			400, 'invalid_value', { schema: 'users', path: 'auth.0', issues: [{ path: 'auth.0', code: 'type', expected: 'object', received: 'null' }] }],
 		['a secure store whose name is not text', () => [core('secure-store'), post({ name: { $ne: null } }), appToken()],
 			400, 'invalid_value', { schema: 'secureStore', path: 'name', issues: [{ path: 'name', code: 'type', expected: 'string', received: 'object' }] }],
+		// SR-DPC-001 R9: the name was looked for as given, as a query operator
+		['a batch of secure stores whose name is not text', () => [core('secure-store/bulk/add'), post([{ name: { $ne: null } }]), appToken()],
+			400, 'invalid_value', { schema: 'secureStore', path: 'name', index: 0, issues: [{ path: 'name', code: 'type', expected: 'string', received: 'object' }] }],
 		['a note without its required text', () => [notes(), post({}), appToken()],
 			400, 'missing_field', { schema: 'note', path: 'text', issues: [{ path: 'text', code: 'required' }] }],
 		['a batch of notes whose second lacks its text', () => [notes('/bulk/add'), post([{ text: 'a' }, {}]), appToken()],
@@ -242,7 +254,13 @@ describe('Error contract', async () => {
 			400, 'invalid_update'],
 		["a note the caller's policy wouldn't let it read", () => [notes(), post({ text: 'not mine' }), writerToken()],
 			403, 'access_denied', { schema: 'note', index: 0 }],
-		['a search on a date it cannot read', () => [notes(), { method: 'SEARCH', headers: json, body: JSON.stringify({ query: { due: { $gtDate: 'not a date' } } }) }, appToken()],
+		['a search with a negative skip', () => [notes(), { method: 'QUERY', headers: json, body: JSON.stringify({ skip: -1 }) }, appToken()],
+			400, 'invalid_value_skip'],
+		['a search with a negative limit', () => [notes(), { method: 'QUERY', headers: json, body: JSON.stringify({ limit: -1 }) }, appToken()],
+			400, 'invalid_value_limit'],
+		['a core search with a negative skip', () => [core('policy'), { method: 'QUERY', headers: json, body: JSON.stringify({ skip: -1 }) }, appToken()],
+			400, 'invalid_value_skip'],
+		['a search on a date it cannot read', () => [notes(), { method: 'QUERY', headers: json, body: JSON.stringify({ query: { due: { $gtDate: 'not a date' } } }) }, appToken()],
 			400, 'invalid_value', { path: 'due', expected: 'date' }],
 	];
 

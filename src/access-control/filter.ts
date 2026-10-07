@@ -13,40 +13,25 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import { ObjectId } from 'bson';
 
-import Sugar from '../helpers/sugar.js';
-
-import AccessControlHelpers, { CombineEnvGroups } from './helpers.js';
-
-import Env, { ACEnv, ACPolicyEnvCombined, PolicyEnv } from './env.js';
+import Env, { ACPolicyEnvCombined, PolicyEnv } from './env.js';
 
 import * as Helpers from '../helpers/index.js';
 import Logging from '../helpers/logging.js';
-import Model from '../model/index.js';
-
-import { ApplicablePolicyConfig } from './index.js';
 
 import { PolicyQuery } from '../model/core/policy.js';
-
-import type { RequestWithBody } from '../types/routes.js';
-
-function isObjectId(value: unknown): value is ObjectId {
-  return value?.constructor?.name === 'ObjectId';
-}
-
-type AccessControlScalar = string | number | boolean | Date | ObjectId;
-type AccessControlValue = AccessControlScalar | AccessControlScalar[] | null;
-
-function isAccessControlScalar(value: unknown): value is AccessControlScalar {
-  return value instanceof Date || isObjectId(value) || ['string', 'number', 'boolean'].includes(typeof value);
-}
-
-function isAccessControlValue(value: unknown): value is AccessControlValue {
-  if (value === null) return true;
-  if (isAccessControlScalar(value)) return true;
-  return Array.isArray(value) && value.every((item: unknown) => isAccessControlScalar(item));
-}
+import {
+  ALIASES,
+  asQueried,
+  findUnknownOperator,
+  isPlainObject,
+  isValueOperators,
+  LOGICAL_ALIASES,
+  matchQuery,
+  toMongoQuery,
+} from './operators.js';
+import { isObjectId } from '../datastore/adapters/object-id.js';
+import type StandardModel from '../model/type/standard.js';
 
 /**
  * @class Filter
@@ -56,6 +41,22 @@ export class UnresolvedEnvError extends Error {
   constructor(reference: string) {
     super(`unresolved_policy_env: ${reference}`);
     this.name = 'UnresolvedEnvError';
+  }
+}
+
+// A policy query naming an operator nothing knows, which can't be applied
+export class UnknownOperatorError extends Error {
+  constructor(operator: string, path: string) {
+    super(`unknown_policy_operator: ${operator} at ${path}`);
+    this.name = 'UnknownOperatorError';
+  }
+}
+
+// A policy query with a logical operator that isn't given a list of one or more queries, which can't be applied
+export class InvalidPolicyQueryError extends Error {
+  constructor(operator: string) {
+    super(`invalid_policy_query: ${operator} takes a list of one or more queries`);
+    this.name = 'InvalidPolicyQueryError';
   }
 }
 
@@ -69,66 +70,22 @@ const resolveQueryValue = async (value: unknown, envVars: ACPolicyEnvCombined) =
   return resolved;
 };
 
+// An operand with its #env references read: each item of a list, as an env lookup's query reads them, and a list item
+// that isn't set refuses the query as a value that isn't set does, rather than being dropped, which would let a @nin
+// read more
+const resolveQueryOperand = async (value: unknown, envVars: ACPolicyEnvCombined): Promise<unknown> => {
+  if (!Array.isArray(value)) return resolveQueryValue(value, envVars);
+
+  const items: unknown[] = [];
+  for (const item of value as unknown[]) items.push(await resolveQueryOperand(item, envVars));
+  return items;
+};
+
+// What reading a query against an entity takes of its model
+export type QueryModel = Pick<StandardModel<unknown>, 'parseQuery' | 'flatSchemaData' | 'schemaData'>;
+
 export class Filter {
-  static queryOperators: { [index: string]: string } = {
-    '@eq': '$eq',
-    '@not': '$not',
-    '@gt': '$gt',
-    '@lt': '$lt',
-    '@gte': '$gte',
-    '@lte': '$lte',
-    '@gtDate': '$gtDate',
-    '@gteDate': '$gteDate',
-    '@ltDate': '$ltDate',
-    '@lteDate': '$lteDate',
-    '@rex': '$rex',
-    '@rexi': '$rexi',
-    '@in': '$in',
-    '@nin': '$nin',
-    '@exists': '$exists',
-    '@inProp': '$inProp',
-    '@elMatch': '$elMatch',
-  };
-  static logicalOperator = ['@and', '@or', '$and', '$or'];
-  arrayOperators: string[];
-  manipulationVerbs: string[];
-
   _queryAccess = ['%FULL_ACCESS%', '%APP_SCHEMA%', '%CORE_SCHEMA%'];
-
-  constructor() {
-    this.arrayOperators = ['@in', '@nin', '$in', '$nin'];
-
-    this.manipulationVerbs = [
-      'PUT',
-      // 'POST', // SKIPPING POST FOR NOW
-      'DELETE',
-    ];
-  }
-
-  // This function will now take in policies, modifiy their queries and return back the list.
-  async buildApplicablePoliciesQuery(policies: ApplicablePolicyConfig[], reqEnv: ACEnv) {
-    const output: ApplicablePolicyConfig[] = [];
-
-    for await (const policy of policies) {
-      if (!policy.config.query) {
-        continue;
-      }
-
-      const p = Object.assign({}, policy);
-      const env = CombineEnvGroups(policy, reqEnv);
-      try {
-        p.config.query = await this.buildPolicyQuery(policy.config.query, env);
-      } catch (err: unknown) {
-        // A config whose query can't be built grants nothing
-        if (!(err instanceof UnresolvedEnvError)) throw err;
-        Logging.logWarn(`Policy ${policy.name} not applied: ${err.message}`);
-        continue;
-      }
-      output.push(p);
-    }
-
-    return output;
-  }
 
   /**
    * Walk over a query object and replace any env variables with their values.
@@ -150,230 +107,87 @@ export class Filter {
       const val = translatedQuery[key] as unknown;
       if (stripAccessKeys && key === 'access' && typeof val === 'string' && this._queryAccess.includes(val)) continue;
 
-      if (typeof val === 'string') {
-        outputRecord[key] = await resolveQueryValue(val, envVars);
+      // A logical operator takes a list of one or more queries. One that hasn't been given one can't be read, so its
+      // config grants nothing, rather than the operator being dropped and the query reading every entity
+      if (Object.hasOwn(LOGICAL_ALIASES, key)) {
+        if (!Array.isArray(val) || val.length < 1 || !val.every((part) => isPlainObject(part))) {
+          throw new InvalidPolicyQueryError(key);
+        }
+
+        // Each query in the list is built as a whole query is, its env read
+        const parts: PolicyQuery[] = [];
+        for (const part of val as PolicyQuery[]) {
+          parts.push((await this.buildPolicyQuery(part, envVars, stripAccessKeys)) ?? {});
+        }
+        outputRecord[key] = parts;
         continue;
       }
-      if (typeof val !== 'object' || val === null) {
+
+      // A list is a value to equal, kept a list with its items read, rather than read as an object of operators
+      if (typeof val === 'string' || Array.isArray(val)) {
+        outputRecord[key] = await resolveQueryOperand(val, envVars);
+        continue;
+      }
+      // A value is compared whole, an empty object or list included, rather than dropped
+      if (typeof val !== 'object' || val === null || Object.keys(val).length < 1) {
         outputRecord[key] = val;
         continue;
       }
-      if (Object.keys(val).length < 1) continue;
 
-      if (Filter.logicalOperator.includes(key)) {
-        if (!Array.isArray(val)) continue;
-        for (const queryObj of val as unknown[]) {
-          if (typeof queryObj !== 'object' || Array.isArray(queryObj)) {
-            throw new Error(`Invalid query object for logical operator ${key}: ${JSON.stringify(queryObj)}`);
-          }
-
-          // Recursively build the query for each object in the logical operator array.
-          const builtQuery = await this.buildPolicyQuery(queryObj as PolicyQuery | null, envVars, stripAccessKeys);
-          if (builtQuery) {
-            const existing = outputRecord[key];
-            if (!Array.isArray(existing)) outputRecord[key] = [];
-            (outputRecord[key] as unknown[]).push(builtQuery);
-          }
-        }
-        continue;
-      }
-
-      if (outputRecord[key]) {
-        if (Array.isArray(outputRecord[key]) && Array.isArray(val)) {
-          for await (const elem of val as unknown[]) {
-            const elementExist = (outputRecord[key] as unknown[]).findIndex(
-              (el) => JSON.stringify(el) === JSON.stringify(elem),
-            );
-
-            if (elementExist !== -1) continue;
-            (outputRecord[key] as unknown[]).push(elem);
-          }
-
-          continue;
-        } else if (!Array.isArray(outputRecord[key]) && !Array.isArray(val)) {
-          const outputByKey = outputRecord[key] as Record<string, unknown>;
-          const valRecord = val as Record<string, unknown>;
-
-          Object.keys(outputByKey).forEach((k) => {
-            if (this.arrayOperators.includes(k)) {
-              const existing = outputByKey[k];
-              const next = valRecord[k];
-              if (Array.isArray(existing) && Array.isArray(next)) {
-                outputByKey[k] = existing.concat(next).filter((v: unknown, idx, arr) => arr.indexOf(v) === idx);
-              }
-            } else {
-              outputByKey[k] = valRecord[k];
-            }
-          });
-
+      // Every operator the field is given, each with its value read with the env; only the first was kept, so a range
+      // lost its upper bound
+      const conditions: Record<string, unknown> = {};
+      for (const [operator, value] of Object.entries(val as Record<string, unknown>)) {
+        // An $elMatch's object is built as findUnknownOperator reads it: the operators an item must pass, as a field's,
+        // or a query an item must match, whose `access` is an item's field rather than what a policy grants. Its
+        // #env values were left as their text
+        if (Object.hasOwn(ALIASES, operator) && ALIASES[operator].operator === '$elemMatch' && isPlainObject(value)) {
+          conditions[operator] = isValueOperators(value)
+            ? ((await this.buildPolicyQuery({ [key]: value }, envVars, false)) as Record<string, unknown>)[key]
+            : await this.buildPolicyQuery(value, envVars, false);
           continue;
         }
+        conditions[operator] = await resolveQueryOperand(value, envVars);
       }
-
-      if (typeof val === 'string') {
-        outputRecord[key] = await resolveQueryValue(val, envVars);
-        continue;
-      }
-
-      const operator = Object.keys(val)[0];
-      const value = (val as Record<string, unknown>)[operator];
-
-      // if (!Filter.queryOperators[operator]) continue;
-
-      outputRecord[key] = {};
-      (outputRecord[key] as Record<string, unknown>)[operator] = await resolveQueryValue(value, envVars);
+      outputRecord[key] = conditions;
     }
+
+    // A query naming an operator nothing knows can't be applied (R3 step 7)
+    const unknown = findUnknownOperator(outputRecord);
+    if (unknown) throw new UnknownOperatorError(unknown.operator, unknown.path);
 
     return output;
   }
 
   /**
-   * Function is used to evaluate a query against an entity, ensuring that the query isn't going to filter out this entity.
-   * The function will return true if it selects the entity, false if it doesn't.
+   * Whether a policy's built query reads an entity, as a REST query would: parsed against the entity's model as REST
+   * parses it, and matched as MongoDB matches it (D-31). A query whose values can't be read reads nothing.
+   * @param {object} query - a policy query, as buildPolicyQuery gives it
+   * @param {object} entity - the entity, as stored or as its JSON
+   * @param {object} model - the entity's model, whose schema reads the query
+   * @return {boolean}
    */
-  evaluateQueryAgainstEntity(query: PolicyQuery, entity: { [index: string]: unknown }, partialPass?: boolean): boolean {
-    const flattened = Helpers.flattenedObject(entity);
-    return this.__evaluateQueryAgainstEntity(query, flattened, partialPass, entity);
-  }
+  evaluateQueryAgainstEntity(query: PolicyQuery, entity: Record<string, unknown>, model: QueryModel): boolean {
+    const queryRecord = Filter.convertQueryPrefixOperators(query) as Record<string, unknown>;
+    // The access keys are what a policy grants, not a field
+    const fields = Object.fromEntries(
+      Object.entries(queryRecord).filter(
+        ([key, value]) => !(key === 'access' && this._queryAccess.includes(value as string)),
+      ),
+    );
+    if (queryRecord.access === '%FULL_ACCESS%' && Object.keys(fields).length < 1) return true;
 
-  __evaluateQueryAgainstEntity(
-    query: PolicyQuery,
-    flatEntity: { [index: string]: unknown },
-    partialPass?: boolean,
-    testEntity?: { [index: string]: unknown },
-  ): boolean {
-    if (!flatEntity) return false;
-    const queryRecord = query as Record<string, unknown>;
-
-    // TODO: Object will need to be flatterned.
-    if (queryRecord['access'] && queryRecord['access'] === '%FULL_ACCESS%') return true;
-
-    const results: Array<boolean> = [];
-
-    for (const key of Object.keys(queryRecord)) {
-      if (Filter.logicalOperator.includes(key)) {
-        const innerPartialPass = key === '@or' || key === '$or' ? true : false;
-
-        const innerResults: Array<boolean> = [];
-        // TODO: Add check as this is expected to be an array.
-        const nestedQuery = queryRecord[key];
-        if (!Array.isArray(nestedQuery)) continue;
-        for (const queryObj of nestedQuery as unknown[]) {
-          if (typeof queryObj !== 'object' || queryObj === null) continue;
-          // Each branch is a whole query, its fields AND'd as MongoDB does; the OR is across branches
-          innerResults.push(this.__evaluateQueryAgainstEntity(queryObj as PolicyQuery, flatEntity, false, testEntity));
-        }
-
-        if (innerPartialPass) {
-          results.push(innerResults.some((r) => r));
-        } else {
-          results.push(innerResults.length > 0 ? innerResults.every((r) => r) : false);
-        }
-
-        continue;
-      }
-
-      const queryField = queryRecord[key];
-      if (typeof queryField !== 'object' || queryField === null || Array.isArray(queryField)) continue;
-
-      const fieldResults: boolean[] = [];
-
-      for (const operator of Object.keys(queryField)) {
-        let evaluationRes = false;
-
-        // if (!Filter.queryOperators[operator]) {
-        // 	throw new Error(`Invalid policy condition operator: ${operator}`);
-        // }
-
-        // * We don't need to perform a env replacment here as the query should have already
-        // * gone through the query builder which will have replaced the values.
-        const lhs = this.__getValueByPath(flatEntity, key);
-        const rhs = (queryField as Record<string, unknown>)[operator];
-
-        // ? Maybe throw an error for incomplete operation sides, instead of just failing this operator.
-        if (lhs !== undefined && rhs !== undefined && isAccessControlValue(lhs) && isAccessControlValue(rhs)) {
-          evaluationRes = AccessControlHelpers.evaluateOperation(lhs, rhs, operator);
-        }
-
-        fieldResults.push(evaluationRes);
-      }
-
-      // The condition defaults are treated as AND by default.
-      results.push(partialPass ? fieldResults.some((r) => r) : fieldResults.every((r) => r));
+    let parsed: Record<string, unknown>;
+    try {
+      // A policy's query naming a path a strict schema doesn't have reads nothing, rather than failing
+      parsed = model.parseQuery(fields, {}, model.flatSchemaData, false) as Record<string, unknown>;
+    } catch (err: unknown) {
+      Logging.logWarn(
+        `A policy query couldn't be read against ${model.schemaData?.name}: ${Helpers.getThrownErrorMessage(err)}`,
+      );
+      return false;
     }
-
-    if (partialPass) return results.some((r) => r);
-
-    return results.length > 0 ? results.every((r) => r) : false;
-  }
-
-  /**
-   * Get path value from a flattened object
-   * @param {Object} flattenedObj
-   * @param {string} targetPath
-   */
-  __getValueByPath(flattenedObj: { [index: string]: unknown }, targetPath: string) {
-    if (targetPath in flattenedObj) {
-      return flattenedObj[targetPath];
-    }
-
-    const pattern = /\.\d/;
-    const keys = Object.keys(flattenedObj);
-    let value: unknown = null;
-
-    for (const key of keys) {
-      const modifiedKey = key.replace(/^\d+\.|\.\d+/g, '');
-      if (modifiedKey === targetPath && pattern.test(key)) {
-        value = value && Array.isArray(value) ? [...value, flattenedObj[key]] : [flattenedObj[key]];
-      }
-      if (key === targetPath) value = flattenedObj[key];
-    }
-
-    return value;
-  }
-
-  // TODO needs to be removed and added to the adapters - TEMPORARY HACK!!
-  // TODO: This function needs a refactor, expecting the AC to be already applied to the queiries.
-  async evaluateManipulationActions(req: RequestWithBody<{ query?: Record<string, unknown> }>, collection: string) {
-    const coreSchema = await AccessControlHelpers.cacheCoreSchema();
-    const coreSchemNames = coreSchema.map((c) => Sugar.String.singularize(c.name));
-    const isCoreSchema = coreSchemNames.includes(collection);
-
-    const verb = req.method;
-    if (!this.manipulationVerbs.includes(verb)) return true;
-
-    if (!req.context.authApp) {
-      throw new Error('No auth app found in request context');
-    }
-
-    const appId = req.context.authApp.id;
-    // const appShortId = Helpers.shortId(appId);
-    const body: unknown[] = Array.isArray(req.body) ? req.body : [req.body];
-    let query: Record<string, unknown> = req.body.query ? req.body.query : {};
-    // const baseURL = req.url.replace(/\?.*/, '');
-    // const id = (baseURL) ? baseURL.split('/').pop() : undefined;
-    let passed = true;
-
-    const model = isCoreSchema ? Model.getCoreModelByName(collection) : await Model.getAppModel(appId, collection);
-
-    // ! This looks weird
-    for await (const _update of body) {
-      if (query._id && typeof query._id !== 'object') {
-        query._id = await model.createId(query._id as string);
-      }
-
-      const parsedQuery = await model.parseQuery(query, {}, model.flatSchemaData);
-      query = { ...query, ...parsedQuery };
-      const res = await model.count(query);
-      if (!res) {
-        passed = false;
-        delete query._id;
-        return passed;
-      }
-    }
-
-    delete req.body.query; // Deleting it for manipulation verbs
-    return passed;
+    return matchQuery(toMongoQuery(parsed), asQueried(entity, model.flatSchemaData));
   }
 
   mergeQueryFilters(
@@ -437,8 +251,8 @@ export class Filter {
       return query;
     }
 
-    // ! Shouldn't be referencing ObjectId's outside of the adapters.
-    if (isObjectId(query)) {
+    // Values, not queries
+    if (isObjectId(query) || query instanceof Date) {
       return query;
     }
 

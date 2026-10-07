@@ -14,7 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { describe, it } from 'mocha';
+import { describe, it, afterEach } from 'mocha';
 import assert from 'assert';
 import sinon from 'sinon';
 
@@ -151,6 +151,241 @@ describe('model/type/StandardModel:parseQuery values', () => {
   }
 });
 
+// A query names only operators Buttress knows, with operands it can take; anything else is refused with a 400, where
+// MongoDB refused it with a 500 or Buttress sent it on as another operator (R3 step 7)
+describe('model/type/StandardModel:parseQuery operators', () => {
+  for (const [query, path, received] of [
+    [{ name: { $foo: 'x' } }, 'name', '$foo'],
+    [{ name: { '@foo': 'x' } }, 'name', '@foo'],
+    [{ name: { $regx: '^a' } }, 'name', '$regx'],
+    [{ name: { $eq: 'x', city: 'y' } }, 'name', 'city'],
+    [{ $where: 'this.a' }, '$where', '$where'],
+    [{ $or: [{ name: { $foo: 1 } }] }, 'name', '$foo'],
+    [{ scores: { $elMatch: { $foo: 1 } } }, 'scores', '$foo'],
+  ]) {
+    it(`refuses ${JSON.stringify(query)} with 400 unknown_operator`, () => {
+      assert.throws(() => createModel().parseQuery(query), {
+        status: 400,
+        code: 'unknown_operator',
+        details: { path, received },
+      });
+    });
+  }
+
+  for (const [query, path, expected] of [
+    [{ name: { $in: 'x' } }, 'name', 'array'],
+    [{ name: { $nin: 'x' } }, 'name', 'array'],
+    [{ name: { $all: 'x' } }, 'name', 'array'],
+    [{ name: { $rex: '(' } }, 'name', 'pattern'],
+    [{ name: { $rexi: 5 } }, 'name', 'pattern'],
+    // Patterns MongoDB reads differently from JavaScript, or refuses
+    [{ name: { $rex: '(?i)abc' } }, 'name', 'pattern'],
+    [{ name: { $rex: '\\Aabc' } }, 'name', 'pattern'],
+    [{ name: { $rex: 'abc\\Z' } }, 'name', 'pattern'],
+    [{ name: { $rex: '\\Qa.b\\E' } }, 'name', 'pattern'],
+    [{ name: { $rex: '\\p{L}' } }, 'name', 'pattern'],
+    [{ name: { $rex: '[[:alpha:]]' } }, 'name', 'pattern'],
+    [{ name: { $rex: '\\u0041' } }, 'name', 'pattern'],
+    [{ name: { $rex: '\\v' } }, 'name', 'pattern'],
+    [{ name: { $rexi: '\\x{41}' } }, 'name', 'pattern'],
+    [{ name: { $regex: 'a{70000}' } }, 'name', 'pattern'],
+    [{ name: { $inProp: 5 } }, 'name', 'string'],
+    [{ tags: { $elMatch: 'x' } }, 'tags', 'object'],
+    // The operators in an $elMatch on a list of values, as the same operators outside it
+    [{ tags: { $elMatch: { $in: 'x' } } }, 'tags', 'array'],
+    [{ tags: { $elMatch: { '@rex': '(?i)a' } } }, 'tags', 'pattern'],
+    [{ $or: { name: 'x' } }, '$or', 'array'],
+    [{ $and: ['x'] }, '$and', 'array'],
+  ]) {
+    it(`refuses ${JSON.stringify(query)} with 400 invalid_value`, () => {
+      assert.throws(() => createModel().parseQuery(query), { status: 400, code: 'invalid_value', details: { path, expected } });
+    });
+  }
+
+  it('takes a pattern JavaScript and MongoDB read alike', () => {
+    for (const pattern of [
+      '^a\\.b$',
+      '\\d{3}-\\w+\\s\\S',
+      'a\\-b\\/c\\\\d',
+      '[a-z]+\\b',
+      '(?:ab)+',
+      '(?<year>\\d{4})-\\k<year>',
+      '\\x41\\cJ\\t',
+      'a{2,65535}',
+    ]) {
+      assert.deepStrictEqual(createModel().parseQuery({ name: { $rex: pattern } }), { name: { $rex: pattern } }, pattern);
+    }
+  });
+
+  it('compares an object of fields whole, as MongoDB does', () => {
+    assert.deepStrictEqual(createModel().parseQuery({ address: { city: 'Leeds' } }), {
+      address: { $eq: { city: 'Leeds' } },
+    });
+  });
+
+  it('compares a date given as the value', () => {
+    const at = new Date('2025-01-01T00:00:00.000Z');
+    assert.deepStrictEqual(createModel().parseQuery({ at }), { at: { $eq: at } });
+  });
+
+  it('takes @and, @or and @nor as $and, $or and $nor', () => {
+    assert.deepStrictEqual(createModel().parseQuery({ '@or': [{ name: 'a' }], '@nor': [{ name: 'b' }] }), {
+      $or: [{ name: { $eq: 'a' } }],
+      $nor: [{ name: { $eq: 'b' } }],
+    });
+  });
+
+  it("gives the operators in an $elMatch on a list of values their $ names", () => {
+    assert.deepStrictEqual(createModel().parseQuery({ scores: { $elMatch: { '@gt': 3 } } }), {
+      scores: { $elMatch: { $gt: 3 } },
+    });
+  });
+
+  // As the same operators outside $elMatch read them (D-2)
+  const listsSchema = {
+    ...widgetSchema,
+    properties: {
+      ...widgetSchema.properties,
+      scores: { __type: 'array', __itemtype: 'number' },
+      ownerIds: { __type: 'array', __itemtype: 'id' },
+      dates: { __type: 'array', __itemtype: 'date' },
+    },
+  };
+
+  it("reads the operands of an $elMatch's operators on a typed list as the list's items", () => {
+    const model = createModel(listsSchema);
+    assert.deepStrictEqual(model.parseQuery({ scores: { $elMatch: { $gt: '5', '@in': ['1', 2], $exists: true } } }), {
+      scores: { $elMatch: { $gt: 5, $in: [1, 2], $exists: true } },
+    });
+    assert.deepStrictEqual(model.parseQuery({ ownerIds: { $elMatch: { $eq: HEX_ID } } }), {
+      ownerIds: { $elMatch: { $eq: { id: HEX_ID } } },
+    });
+    assert.deepStrictEqual(model.parseQuery({ dates: { $elMatch: { $gteDate: '2025-01-01' } } }), {
+      dates: { $elMatch: { $gteDate: new Date('2025-01-01') } },
+    });
+  });
+
+  for (const [query, path, expected] of [
+    [{ ownerIds: { $elMatch: { $eq: 'not-an-id' } } }, 'ownerIds', 'id'],
+    [{ scores: { $elMatch: { $lt: 'many' } } }, 'scores', 'number'],
+  ]) {
+    it(`refuses ${JSON.stringify(query)} with 400 invalid_value, as outside $elMatch`, () => {
+      assert.throws(() => createModel(listsSchema).parseQuery(query), { status: 400, code: 'invalid_value', details: { path, expected } });
+    });
+  }
+
+  const linesSchema = {
+    ...widgetSchema,
+    properties: { ...widgetSchema.properties, lines: { __type: 'array', __schema: { sku: { __type: 'string' }, qty: { __type: 'number' } } } },
+  };
+
+  it('reads an $elMatch whose item query has its own $or or $and as a query on the items, as MongoDB does', () => {
+    const model = createModel(linesSchema);
+    assert.deepStrictEqual(model.parseQuery({ lines: { $elMatch: { $or: [{ sku: 'a' }, { qty: '2' }] } } }), {
+      lines: { $elMatch: { $or: [{ sku: { $eq: 'a' } }, { qty: { $eq: 2 } }] } },
+    });
+    assert.deepStrictEqual(model.parseQuery({ lines: { $elMatch: { sku: 'a', '@and': [{ qty: { $gt: '1' } }] } } }), {
+      lines: { $elMatch: { sku: { $eq: 'a' }, $and: [{ qty: { $gt: 1 } }] } },
+    });
+  });
+
+  it("refuses a value's operator in an $elMatch's item query, as MongoDB does", () => {
+    assert.throws(() => createModel(linesSchema).parseQuery({ lines: { $elMatch: { $gt: 1, sku: 'a' } } }), {
+      status: 400,
+      code: 'unknown_operator',
+      details: { path: '$gt', received: '$gt' },
+    });
+  });
+});
+
+// A query's names are read as its own: one naming __proto__ names no property a schema can have, and a field named
+// after one of an object's own properties is a field
+describe("model/type/StandardModel:parseQuery names Object.prototype has", () => {
+  afterEach(() => {
+    for (const name of ['$eq', '$gt', '$in']) {
+      delete Object.prototype[name];
+      delete Object[name];
+    }
+  });
+
+  for (const query of [
+    JSON.parse('{"__proto__": {"$gt": 1}}'),
+    JSON.parse('{"$or": [{"__proto__": {"$in": [1]}}]}'),
+    { 'address.__proto__.city': 'x' },
+  ]) {
+    it(`refuses ${JSON.stringify(query)} with 400 unknown_path, leaving Object.prototype as it is`, () => {
+      assert.throws(() => createModel().parseQuery(query), { status: 400, code: 'unknown_path' });
+      assert.strictEqual(Object.prototype.$gt, undefined);
+      assert.strictEqual(Object.prototype.$in, undefined);
+    });
+  }
+
+  it("reads a field named after one of an object's own properties as a field", () => {
+    assert.deepStrictEqual(createModel().parseQuery({ constructor: { $gt: 1 }, toString: 'x' }), {
+      constructor: { $gt: 1 },
+      toString: { $eq: 'x' },
+    });
+    assert.strictEqual(Object.$gt, undefined);
+  });
+});
+
+// A strict schema refuses a query on a path it doesn't have, as it refuses a create giving one; any other schema
+// queries it as given, so a client can reach data its schema no longer declares (R3 step 7)
+describe('model/type/StandardModel:parseQuery paths', () => {
+  const fields = {
+    name: { __type: 'string', __default: null },
+    address: { city: { __type: 'string', __default: null } },
+    meta: { __type: 'object', __default: null },
+    lines: { __type: 'array', __schema: { sku: { __type: 'string', __default: null } } },
+    tags: { __type: 'array', __itemtype: 'string' },
+    things: { __type: 'array' },
+    id: { __type: 'id' },
+    sourceId: { __type: 'id' },
+  };
+  const strict = () => createModel({ name: 'part', type: 'collection', strict: true, properties: structuredClone(fields) });
+  const lax = () => createModel({ name: 'part', type: 'collection', properties: structuredClone(fields) });
+
+  for (const query of [
+    { name: 'a' },
+    { 'address.city': 'Leeds' },
+    { address: { city: 'Leeds' } },
+    { 'meta.anything.at.all': 1 },
+    { 'lines.sku': 'X' },
+    { 'lines.0.sku': 'X' },
+    { lines: { $elMatch: { sku: 'X' } } },
+    { 'tags.0': 'a' },
+    { 'things.colour': 'red' },
+    { things: { $elMatch: { colour: 'red' } } },
+    { id: '507f1f77bcf86cd799439011' },
+    { sourceId: '507f1f77bcf86cd799439011' },
+    { _appId: 'internal' },
+  ]) {
+    it(`takes ${JSON.stringify(query)}, a path the strict schema has`, () => {
+      assert.doesNotThrow(() => strict().parseQuery(query));
+    });
+  }
+
+  for (const [query, path] of [
+    [{ colour: 'red' }, 'colour'],
+    [{ 'address.street': 'x' }, 'address.street'],
+    [{ 'name.first': 'x' }, 'name.first'],
+    [{ 'lines.colour': 'x' }, 'lines.colour'],
+    [{ 'tags.colour': 'x' }, 'tags.colour'],
+    [{ $or: [{ name: 'a' }, { colour: 'red' }] }, 'colour'],
+    [{ lines: { $elMatch: { colour: 'x' } } }, 'colour'],
+    [{ constructor: 'x' }, 'constructor'],
+    [{ toString: { $exists: true } }, 'toString'],
+  ]) {
+    it(`refuses ${JSON.stringify(query)} with 400 unknown_path when the schema is strict`, () => {
+      assert.throws(() => strict().parseQuery(query), { status: 400, code: 'unknown_path', details: { path } });
+    });
+
+    it(`takes ${JSON.stringify(query)} as given when the schema isn't strict`, () => {
+      assert.doesNotThrow(() => lax().parseQuery(query));
+    });
+  }
+});
+
 describe('model/type/StandardModel:parseQuery', () => {
   it('turns a direct value compare into $eq', () => {
     const model = createModel();
@@ -171,21 +406,34 @@ describe('model/type/StandardModel:parseQuery', () => {
     assert.deepStrictEqual(model.parseQuery({ age: { $gt: 18 } }), { age: { $gt: 18 } });
   });
 
-  it('renames $not to $ne', () => {
+  // A parsed query is still a Buttress query; only the MongoDB adapter gives it MongoDB's names (toMongoQuery)
+  it("keeps $not, which the MongoDB adapter gives as $ne", () => {
     const model = createModel();
-    assert.deepStrictEqual(model.parseQuery({ age: { $not: 18 } }), { age: { $ne: 18 } });
+    assert.deepStrictEqual(model.parseQuery({ age: { $not: 18 } }), { age: { $not: 18 } });
   });
 
-  it('renames date-range operators and converts the operand to a Date', () => {
+  it('keeps the date-range operators, with the operand read as a Date', () => {
     const model = createModel();
     const result = model.parseQuery({ createdAt: { $gtDate: '2025-01-01' } }, {}, { createdAt: { __type: 'date' } });
-    assert.deepStrictEqual(result, { createdAt: { $gt: new Date('2025-01-01') } });
+    assert.deepStrictEqual(result, { createdAt: { $gtDate: new Date('2025-01-01') } });
   });
 
-  it('rewrites $rex into a case-sensitive $regex, and $rexi into a case-insensitive one', () => {
+  it('keeps $rex and $rexi, and $inProp with the text it looks for', () => {
     const model = createModel();
-    assert.deepStrictEqual(model.parseQuery({ name: { $rex: '^wid' } }), { name: { $regex: '^wid' } });
-    assert.deepStrictEqual(model.parseQuery({ name: { $rexi: '^wid' } }), { name: { $regex: '^wid', $options: 'i' } });
+    assert.deepStrictEqual(model.parseQuery({ name: { $rex: '^wid' } }), { name: { $rex: '^wid' } });
+    assert.deepStrictEqual(model.parseQuery({ name: { $rexi: '^wid' } }), { name: { $rexi: '^wid' } });
+    assert.deepStrictEqual(model.parseQuery({ name: { $inProp: 'a.b' } }), { name: { $inProp: 'a.b' } });
+  });
+
+  it("gives an operator's @ name as its $ name", () => {
+    const model = createModel();
+    assert.deepStrictEqual(model.parseQuery({ name: { '@rexi': '^wid', '@not': 'x' } }), { name: { $rexi: '^wid', $not: 'x' } });
+  });
+
+  it('gives the same query when it reads one it has already read', () => {
+    const model = createModel();
+    const once = model.parseQuery({ name: { $rexi: '^wid' }, createdAt: { $gtDate: '2025-01-01' } }, {}, { name: { __type: 'string' }, createdAt: { __type: 'date' } });
+    assert.deepStrictEqual(model.parseQuery(once, {}, { name: { __type: 'string' }, createdAt: { __type: 'date' } }), once);
   });
 
   it('recurses into $or/$and arrays', () => {
@@ -211,9 +459,19 @@ describe('model/type/StandardModel:parseQuery', () => {
     const result = model.parseQuery({ name: { $eq: 'env.currentUserName' } }, { currentUserName: 'Alice' });
     assert.deepStrictEqual(result, { name: { $eq: 'Alice' } });
   });
-  it('matches $inProp as the text it is, not as a pattern', () => {
+
+  // A list holding '.' was read as a path, and failed the request
+  it("reads only text starting env. as an env path, and only the env's own values", () => {
     const model = createModel();
-    assert.deepStrictEqual(model.parseQuery({ name: { $inProp: 'a.b(c' } }), { name: { $regex: 'a\\.b\\(c' } });
+    assert.deepStrictEqual(model.parseQuery({ name: { $in: ['.'] } }), { name: { $in: ['.'] } });
+    assert.deepStrictEqual(model.parseQuery({ name: { $nin: ['a', '.'] } }), { name: { $nin: ['a', '.'] } });
+    assert.deepStrictEqual(model.parseQuery({ name: 'a.b' }, { b: 'x' }), { name: { $eq: 'a.b' } });
+    assert.deepStrictEqual(model.parseQuery({ name: 'env.constructor' }), { name: { $eq: 'env.constructor' } });
+  });
+  // The MongoDB adapter escapes it, so it's matched as the text it is (toMongoQuery)
+  it("keeps $inProp's text as it is", () => {
+    const model = createModel();
+    assert.deepStrictEqual(model.parseQuery({ name: { $inProp: 'a.b(c' } }), { name: { $inProp: 'a.b(c' } });
   });
 
   it('recurses into $nor arrays, as into $or and $and', () => {

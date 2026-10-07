@@ -27,8 +27,13 @@ import {
 } from '../core-routes.js';
 import Model from '../../model/index.js';
 import { invalidEntityError, validateSchemaObject } from '../../model/shared.js';
-import { checkPolicyConfig, checkPolicyConfigUpdate } from '../../access-control/policy-definition.js';
-import type { ValidationIssue } from '../../helpers/schema.js';
+import {
+  checkPolicyConfig,
+  checkPolicyConfigUpdate,
+  checkUpdatedPolicyConfig,
+  invalidPolicy,
+  writesIntoConfig,
+} from '../../access-control/policy-definition.js';
 import * as Helpers from '../../helpers/index.js';
 
 import PolicySchemaModel, { Policy, PolicyAddBody } from '../../model/core/policy.js';
@@ -159,8 +164,8 @@ class UpdatePolicy extends CoreUpdateByPath<PolicySchemaModel> {
   };
 
   // A config an update writes has to be able to grant something
-  protected override updateProblem(_req: Request, updates: UpdatePathBody[]) {
-    return policyUpdateProblem(updates);
+  protected override updateProblem(req: Request, updates: UpdatePathBody[], id: string) {
+    return policyUpdateProblem(this.rows(req), id, updates);
   }
 }
 routes.push(UpdatePolicy);
@@ -178,8 +183,8 @@ class BulkUpdatePolicy extends CoreBulkUpdate<PolicySchemaModel> {
   };
 
   // A config an update writes has to be able to grant something
-  protected override updateProblem(_req: Request, updates: UpdatePathBody[]) {
-    return policyUpdateProblem(updates);
+  protected override updateProblem(req: Request, updates: UpdatePathBody[], id: string) {
+    return policyUpdateProblem(this.rows(req), id, updates);
   }
 }
 routes.push(BulkUpdatePolicy);
@@ -194,7 +199,7 @@ const newPolicyProblem = async (app: App, policy: PolicyAddBody) => {
     return Helpers.Errors.badRequest('missing_field');
   }
 
-  const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, policy.selection);
+  const policyCheck = await Helpers.checkPolicySelection(app.policyPropertiesList, policy.selection);
   if (!policyCheck.passed) return Helpers.Errors.badRequest('invalid_policy_selection');
 
   if (!policy.version) return Helpers.Errors.badRequest('invalid_policy_no_version');
@@ -206,13 +211,22 @@ const newPolicyProblem = async (app: App, policy: PolicyAddBody) => {
   return validation.isValid ? null : invalidEntityError(PolicySchemaModel.Schema.name, validation);
 };
 
-// A policy whose configs would grant nothing, or fail when they're evaluated
-const invalidPolicy = (name: string | undefined, issues: ValidationIssue[]) =>
-  Helpers.Errors.badRequest('invalid_policy', `${name ?? 'policy'}: Invalid policy config`, { issues });
-
-// The error for updates that write configs that would grant nothing, or null
-const policyUpdateProblem = (updates: UpdatePathBody | UpdatePathBody[]) => {
-  const issues = (Array.isArray(updates) ? updates : [updates]).flatMap((update) => checkPolicyConfigUpdate(update));
+/**
+ * The error for a request's updates to a policy that write configs that would grant nothing, or fail when they're
+ * evaluated, or null. When one writes into a config by its index, the configs they leave are checked too, which reads
+ * the stored policy: a policy the caller can't reach is refused as it is when it's looked for.
+ */
+const policyUpdateProblem = async (
+  policies: { findByIdOrFail(id: string): Promise<Policy> },
+  id: string,
+  updates: UpdatePathBody | UpdatePathBody[],
+) => {
+  const list = Array.isArray(updates) ? updates : [updates];
+  const issues = list.flatMap((update) => checkPolicyConfigUpdate(update));
+  if (issues.length < 1 && list.some((update) => writesIntoConfig(update))) {
+    const policy = await policies.findByIdOrFail(id);
+    issues.push(...checkUpdatedPolicyConfig(policy.config, list));
+  }
   return issues.length > 0 ? invalidPolicy(undefined, issues) : null;
 };
 

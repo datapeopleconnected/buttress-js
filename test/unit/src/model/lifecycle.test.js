@@ -16,9 +16,12 @@
 import { describe, it, afterEach } from 'mocha';
 import assert from 'assert';
 import sinon from 'sinon';
+import { Readable } from 'node:stream';
 
 import Model from '../../../../dist/model/index.js';
 import StandardModel from '../../../../dist/model/type/standard.js';
+import AppSchemaModel from '../../../../dist/model/core/app.js';
+import Logging from '../../../../dist/helpers/logging.js';
 
 const ModelManager = Model.constructor;
 
@@ -112,5 +115,53 @@ describe('model/ModelManager: app model lifecycle', () => {
     await manager.dropAndCleanAppModels(app.id);
 
     assert.strictEqual(nrp.subscriptions('app:update-schema'), 0);
+  });
+});
+
+describe('model/ModelManager: initSchema', () => {
+  afterEach(() => sinon.restore());
+
+  // A manager whose apps are the ones given, and which notes the models it builds rather than building them
+  function createManager(apps) {
+    const manager = new ModelManager();
+    manager.models.core[AppSchemaModel.name] = { findAll: async () => Readable.from(apps) };
+    const built = [];
+    sinon.stub(manager, '_initSchemaModel').callsFake(async (app, schema) => built.push([app.id, schema.name]));
+    return { manager, built };
+  }
+  const app = (id, __schema) => ({ id, name: id, __schema });
+  const schema = (name, extra = {}) => ({ name, type: 'collection', extends: [], properties: {}, ...extra });
+
+  for (const [label, stored] of [
+    ["isn't JSON", '[{"name": "car", '],
+    ["isn't a list", JSON.stringify({ name: 'car', type: 'collection' })],
+    ['is null', 'null'],
+    ['holds null', JSON.stringify([{ name: 'car', type: 'collection', properties: {} }, null])],
+    ['holds a schema with no type', JSON.stringify([{ name: 'car', properties: {} }])],
+    ['extends a schema it lacks', JSON.stringify([schema('car', { extends: ['missing'] })])],
+  ]) {
+    it(`passes over an app whose stored schema ${label}, and sets up the apps after it`, async () => {
+      const warn = sinon.stub(Logging, 'logWarn');
+      const { manager, built } = createManager([
+        app('app-1', JSON.stringify([schema('boat')])),
+        app('app-2', stored),
+        app('app-3', JSON.stringify([schema('car')])),
+      ]);
+
+      await manager.initSchema();
+
+      assert.deepStrictEqual(built, [
+        ['app-1', 'boat'],
+        ['app-3', 'car'],
+      ]);
+      sinon.assert.calledOnceWithMatch(warn, 'app-2');
+    });
+  }
+
+  it('still fails on an error that is not about the stored schema', async () => {
+    const { manager } = createManager([app('app-1', JSON.stringify([schema('car')]))]);
+    manager._initSchemaModel.rejects(new Error('datastore went away'));
+
+    await assert.rejects(manager.initSchema(), /datastore went away/);
   });
 });

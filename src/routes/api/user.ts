@@ -30,7 +30,7 @@ import { invalidEntityError, validateSchemaObject } from '../../model/shared.js'
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
 import TokenSchemaModel, { PolicyProperties, Token } from '../../model/core/token.js';
-import UserSchemaModel, { User, UserAddBody, UserAuth } from '../../model/core/user.js';
+import UserSchemaModel, { User, UserAddBody, UserAuth, userAlreadyExists } from '../../model/core/user.js';
 import { Services } from '../../bootstrap.js';
 import type { CoreRouteClass, RequestWithBody } from '../../types/routes.js';
 
@@ -326,8 +326,6 @@ class CreateUserAuthToken extends Route {
       return Promise.reject(Helpers.Errors.badRequest('invalid_domains'));
     }
 
-    req.body.type = Model.getCoreModel(TokenSchemaModel).Constants.Type.USER;
-
     if (!req.params.id) {
       this.log(`[${this.name}] Missing required field (id)`, Route.LogLevel.ERR);
       return Promise.reject(Helpers.Errors.badRequest('missing_field'));
@@ -344,14 +342,24 @@ class CreateUserAuthToken extends Route {
       return Promise.reject(Helpers.Errors.badRequest('invalid_policy_property'));
     }
 
+    // Only the domains and policy properties come from the caller; the rest is set here, as a user's
+    // token made with the user is
+    const token: Partial<Token> = {
+      type: Model.getCoreModel(TokenSchemaModel).Constants.Type.USER,
+      permissions: [{ route: '*', permission: '*' }],
+      domains: req.body.domains,
+      policyProperties: req.body.policyProperties,
+    };
+
     return Promise.resolve({
       appId: req.context.authApp.id,
       user,
+      token,
     });
   }
 
-  override async _exec(req: RequestWithBody<Partial<Token>>, res: Response, validate: { appId: string; user: User }) {
-    const rxsToken = await this.scoped(req, TokenSchemaModel).add(req.body, {
+  override async _exec(req: Request, res: Response, validate: { appId: string; user: User; token: Partial<Token> }) {
+    const rxsToken = await this.scoped(req, TokenSchemaModel).add(validate.token, {
       _appId: validate.appId,
       _userId: validate.user.id,
     });
@@ -478,10 +486,11 @@ class AddUser extends Route {
     const existingUsers: User[] = [];
     for await (const auth of req.body.auth) {
       // A user with an auth entry for the same app and the same id or email, both in that one entry. Only what the
-      // auth gives is matched, as a missing field would match every entry without one.
+      // auth gives is matched, as a missing or empty field would match every entry without one. The datastore holds
+      // to the same rule when the user is stored, for a user created since (UserSchemaModel.authKeys).
       const identifiers = [
-        auth.appId !== undefined && auth.appId !== null ? { appId: auth.appId } : null,
-        auth.email !== undefined && auth.email !== null ? { email: auth.email } : null,
+        typeof auth.appId === 'string' && auth.appId !== '' ? { appId: auth.appId } : null,
+        typeof auth.email === 'string' && auth.email !== '' ? { email: auth.email } : null,
       ].filter((identifier) => identifier !== null);
       if (identifiers.length < 1) continue;
 
@@ -498,7 +507,7 @@ class AddUser extends Route {
     if (existingUsers.length > 0) {
       this.log(`[${this.name}] A user already exists with matching auth (appId or email)`, Route.LogLevel.ERR);
       Logging.logObject(existingUsers, Logging.LogLevel.DEBUG);
-      return Promise.reject(Helpers.Errors.badRequest('user_already_exists_with_that_name'));
+      return Promise.reject(userAlreadyExists());
     }
 
     if (req.body.token && req.body.token.domains !== undefined && !Helpers.isDomainList(req.body.token.domains)) {
@@ -676,29 +685,31 @@ class DeleteUser extends Route {
 
     const user = await this.scoped(req, UserSchemaModel).findByIdOrFail(id);
 
-    const userToken = await this.scoped(req, TokenSchemaModel).findOne({ _userId: user.id });
-    if (!userToken) {
+    // A user can have more than one token (CreateUserAuthToken adds them), and every one of them goes with the user
+    const userTokens = await Helpers.streamAll<Token>(
+      await this.scoped(req, TokenSchemaModel).find({ _userId: user.id }),
+    );
+    if (userTokens.length < 1) {
       this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
       return Promise.reject(userTokenNotFound());
     }
 
-    if (req.context.token.value === userToken.value) {
+    const callerValue = req.context.token.value;
+    if (userTokens.some((token) => token.value === callerValue)) {
       this.log(`ERROR: A user could not delete itself`, Route.LogLevel.ERR);
       return Promise.reject(Helpers.Errors.badRequest('user_can_not_delete_itself'));
     }
 
     return {
       user,
-      token: userToken,
+      tokens: userTokens,
     };
   }
 
-  override async _exec(req: Request, res: Response, validate: { user: User; token: Token }) {
+  override async _exec(req: Request, res: Response, validate: { user: User; tokens: Token[] }) {
     await this.scoped(req, UserSchemaModel).rm(validate.user.id);
 
-    if (validate.token) {
-      await this.scoped(req, TokenSchemaModel).rm(validate.token.id);
-    }
+    await this.scoped(req, TokenSchemaModel).rmBulk(validate.tokens.map((token) => token.id));
 
     return true;
   }

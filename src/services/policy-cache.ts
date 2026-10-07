@@ -23,6 +23,7 @@ import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
 import AccessControlPolicyMatch from '../access-control/policy-match.js';
+import { READ_POLICY_VERBS } from '../access-control/helpers.js';
 
 import Model from '../model/index.js';
 import { Policy, PolicyConfig } from '../model/core/policy.js';
@@ -35,6 +36,16 @@ import { RESTActivity } from '../types/bjs-nrp-objects.js';
 // How long a token stays connected without its Socket process renewing it, which it does every heartbeat
 export const CONNECTED_TOKEN_TTL_SECONDS = 1 * 3600;
 export const CONNECTED_TOKEN_HEARTBEAT_MS = (CONNECTED_TOKEN_TTL_SECONDS * 1000) / 4;
+
+// The rules by which a selection selects a token, see AccessControlPolicyMatch.selects. Changed when they change: the
+// policies cached for each token, and each policy's tokens, are kept under keys with the version in them, so an
+// instance never uses what an instance on other rules cached, as in a rolling deploy. 2: every key, exactly (D-32,
+// D-35), and @and/@or; earlier releases' keys have no version.
+export const SELECTION_RULES_VERSION = '2';
+
+// The key of the policies a token is selected for, and of the tokens a policy selects, by SELECTION_RULES_VERSION's rules
+export const tokenPoliciesKey = (tokenId: string) => `token:${tokenId}:policies:${SELECTION_RULES_VERSION}`;
+export const policyTokensKey = (policyId: string) => `policy:${policyId}:tokens:${SELECTION_RULES_VERSION}`;
 
 export class PolicyCache {
   private _redisClient: RedisClientType;
@@ -117,7 +128,7 @@ export class PolicyCache {
     Logging.logSilly(`Marking token as stale: ${tokenId}`);
 
     // Mark the cache as stale, to force requests to the cache to get fresh copies whilst we clean up.
-    await this._redisClient.sAdd(this._prefix(`token:${tokenId}:policies`), 'STALE');
+    await this._redisClient.sAdd(this._prefix(tokenPoliciesKey(tokenId)), 'STALE');
   }
 
   async clearPolicyById(policyId: string) {
@@ -125,7 +136,7 @@ export class PolicyCache {
   }
 
   async getPoliciesByToken(token: Token): Promise<Policy[]> {
-    const policyIds = await this._redisClient.sMembers(this._prefix(`token:${token.id}:policies`));
+    const policyIds = await this._redisClient.sMembers(this._prefix(tokenPoliciesKey(String(token.id))));
 
     // If the tokens are marked as stale, we're in the process of cleaning them up. we'll miss the cache and get fresh data.
     const isStale = policyIds.includes('STALE');
@@ -152,30 +163,30 @@ export class PolicyCache {
     );
     const policies = AccessControlPolicyMatch.getTokenPolicies(appPolicies, tokenState);
     const tokenId = tokenState.id.toString();
-    const tokenPoliciesKey = this._prefix(`token:${tokenId}:policies`);
+    const policiesKey = this._prefix(tokenPoliciesKey(tokenId));
 
     // Requests read the token's policies meanwhile, so they're changed without ever being partly there: the policies are
     // cached and linked to the token first, then the token's set is swapped for the new one in one step, and only then
     // are links to policies it no longer has removed
-    const oldPolicyIds = (await this._redisClient.sMembers(tokenPoliciesKey)).filter((id) => id !== 'STALE');
+    const oldPolicyIds = (await this._redisClient.sMembers(policiesKey)).filter((id) => id !== 'STALE');
     const newPolicyIds = policies.map((policy) => policy.id.toString());
 
     await policies.reduce(async (prev, policy) => {
       await prev;
       await this.addPolicy(policy);
-      await this._redisClient.sAdd(this._prefix(`policy:${policy.id}:tokens`), tokenId);
+      await this._redisClient.sAdd(this._prefix(policyTokensKey(String(policy.id))), tokenId);
     }, Promise.resolve());
 
     if (newPolicyIds.length > 0) {
-      const nextKey = `${tokenPoliciesKey}:next:${Math.random().toString(36).slice(2)}`;
+      const nextKey = `${policiesKey}:next:${Math.random().toString(36).slice(2)}`;
       await this._redisClient.sAdd(nextKey, newPolicyIds);
-      await this._redisClient.rename(nextKey, tokenPoliciesKey);
+      await this._redisClient.rename(nextKey, policiesKey);
     } else {
-      await this._redisClient.del(tokenPoliciesKey);
+      await this._redisClient.del(policiesKey);
     }
 
     for (const policyId of oldPolicyIds.filter((id) => !newPolicyIds.includes(id))) {
-      await this._redisClient.sRem(this._prefix(`policy:${policyId}:tokens`), tokenId);
+      await this._redisClient.sRem(this._prefix(policyTokensKey(policyId)), tokenId);
     }
 
     // Index the token's policy properties, which adds and removes only what changed
@@ -188,18 +199,12 @@ export class PolicyCache {
     // Only app schemas' activity is routed: the SPR doesn't send core entities over sockets
     const schemaWildCard = '%APP_SCHEMA%';
 
-    // The following code is stupid but will be refactored later.
-    const direct = await this._redisClient.sMembers(
-      this._prefix(`app:${activity.appId}:schema:${activity.schemaName}`),
+    // The policies for the schema itself, for every schema, and for every app schema, in one look
+    const policyIds = await this._redisClient.sUnion(
+      [activity.schemaName, '%ALL%', schemaWildCard].map((schema) =>
+        this._prefix(`app:${activity.appId}:schema:${schema}`),
+      ),
     );
-
-    const allWildcard = await this._redisClient.sMembers(this._prefix(`app:${activity.appId}:schema:%ALL%`));
-
-    const typedWildcard = await this._redisClient.sMembers(
-      this._prefix(`app:${activity.appId}:schema:${schemaWildCard}`),
-    );
-
-    const policyIds = [...new Set(direct.concat(allWildcard).concat(typedWildcard))];
 
     if (policyIds.length < 1) return [];
 
@@ -307,9 +312,11 @@ export class PolicyCache {
   // The schema lookups that find a policy for activity: one for each schema it lets a token read
   private _lookupKeys(policy: Policy) {
     return policy.config.reduce((acc: string[], config: PolicyConfig) => {
+      // A config whose verbs or schema aren't lists grants nothing (filterPolicyConfigs)
+      if (!Array.isArray(config.schema) || !Array.isArray(config.verbs)) return acc;
       for (const schema of config.schema) {
         for (const verb of config.verbs) {
-          if (verb === '%ALL%' || verb === 'GET' || verb === 'SEARCH') {
+          if (verb === '%ALL%' || READ_POLICY_VERBS.includes(verb)) {
             acc.push(`app:${policy._appId.toString()}:schema:${schema}`);
           }
         }
@@ -342,11 +349,11 @@ export class PolicyCache {
     }
     await this._redisClient.hDel(this._prefix(`policies`), policyId);
 
-    const tokenIds = await this._redisClient.sMembers(this._prefix(`policy:${policyId}:tokens`));
+    const tokenIds = await this._redisClient.sMembers(this._prefix(policyTokensKey(policyId)));
     for (const tokenId of tokenIds) {
-      await this._redisClient.sRem(this._prefix(`token:${tokenId}:policies`), policyId);
+      await this._redisClient.sRem(this._prefix(tokenPoliciesKey(tokenId)), policyId);
     }
-    await this._redisClient.del(this._prefix(`policy:${policyId}:tokens`));
+    await this._redisClient.del(this._prefix(policyTokensKey(policyId)));
 
     return tokenIds;
   }
@@ -355,18 +362,18 @@ export class PolicyCache {
     Logging.logSilly(`Clearing policies for token: ${tokenId}`);
 
     // Remove the token from all policy tokens
-    const policyIds = await this._redisClient.sMembers(this._prefix(`token:${tokenId}:policies`));
+    const policyIds = await this._redisClient.sMembers(this._prefix(tokenPoliciesKey(tokenId)));
     if (policyIds.length > 0) {
       await policyIds.reduce(async (prev, policyId) => {
         await prev;
         if (policyId === 'STALE') return;
 
-        await this._redisClient.sRem(this._prefix(`policy:${policyId}:tokens`), tokenId);
+        await this._redisClient.sRem(this._prefix(policyTokensKey(policyId)), tokenId);
       }, Promise.resolve());
     }
 
     // Clear out old policies for the token
-    await this._redisClient.del(this._prefix(`token:${tokenId}:policies`));
+    await this._redisClient.del(this._prefix(tokenPoliciesKey(tokenId)));
 
     // Clear out the indexed properties for the token
     await this.removeIndexedTokenPolicyProperties(tokenId);
@@ -378,8 +385,8 @@ export class PolicyCache {
     }
 
     Logging.logSilly(`Connecting token ${tokenId} to policy ${policyId}`);
-    await this._redisClient.sAdd(this._prefix(`token:${tokenId}:policies`), policyId);
-    await this._redisClient.sAdd(this._prefix(`policy:${policyId}:tokens`), tokenId);
+    await this._redisClient.sAdd(this._prefix(tokenPoliciesKey(tokenId)), policyId);
+    await this._redisClient.sAdd(this._prefix(policyTokensKey(policyId)), tokenId);
   }
 
   async disconnectTokenFromPolicy(tokenId: string, policyId: string) {
@@ -388,27 +395,39 @@ export class PolicyCache {
     }
 
     Logging.logSilly(`Disconnecting token ${tokenId} from policy ${policyId}`);
-    await this._redisClient.sRem(this._prefix(`token:${tokenId}:policies`), policyId);
-    await this._redisClient.sRem(this._prefix(`policy:${policyId}:tokens`), tokenId);
+    await this._redisClient.sRem(this._prefix(tokenPoliciesKey(tokenId)), policyId);
+    await this._redisClient.sRem(this._prefix(policyTokensKey(policyId)), tokenId);
   }
 
   async getConnectedTokenIdsByPolicyId(policyId: string) {
+    return (await this.getConnectedTokenIdsByPolicyIds([policyId])).get(policyId) ?? [];
+  }
+
+  /**
+   * The tokens each policy is linked to that are connected now, by policy: a look at each policy's tokens, then one at
+   * when every token they name stops being connected (ZMSCORE, Redis 6.2 or later).
+   * @param {string[]} policyIds
+   * @return {Promise<Map<string, string[]>>}
+   */
+  async getConnectedTokenIdsByPolicyIds(policyIds: string[]): Promise<Map<string, string[]>> {
     const now = Math.floor(Date.now() / 1000);
 
-    const tokenIds = await this._redisClient.sMembers(this._prefix(`policy:${policyId}:tokens`));
-    const connectedTokens = await this._redisClient.zRange(this._prefix(`connected-tokens`), 0, -1);
-    Logging.log(`Policy Tokens: ${JSON.stringify(tokenIds)} in ${JSON.stringify(connectedTokens.join(', '))}`);
+    const linked = await Promise.all(
+      policyIds.map((policyId) => this._redisClient.sMembers(this._prefix(policyTokensKey(policyId)))),
+    );
+    const tokenIds = [...new Set(linked.flat())];
+    const scores =
+      tokenIds.length > 0 ? await this._redisClient.zmScore(this._prefix(`connected-tokens`), tokenIds) : [];
+    const connected = new Set(
+      tokenIds.filter((_tokenId, idx) => {
+        const score = scores[idx];
+        return score !== null && score !== undefined && !isNaN(score) && score > now;
+      }),
+    );
 
-    const connectedPolicyTokens: string[] = [];
-    for await (const tokenId of tokenIds) {
-      const score = await this._redisClient.zScore(this._prefix(`connected-tokens`), tokenId);
-
-      if (score !== null && !isNaN(score) && score > now) {
-        connectedPolicyTokens.push(tokenId);
-      }
-    }
-
-    return connectedPolicyTokens;
+    return new Map(
+      policyIds.map((policyId, idx) => [policyId, linked[idx].filter((tokenId) => connected.has(tokenId))]),
+    );
   }
 
   /**
@@ -453,36 +472,81 @@ export class PolicyCache {
     await this.rehydrateToken(token);
   }
 
+  /**
+   * The tokens whose policies were cached by other rules than SELECTION_RULES_VERSION's (an earlier release's keys have
+   * no version), once across every process sharing this Redis: the first to start on these rules gets them, and the
+   * rest none. A request works out a token's policies by these rules when they have none cached, so this is for
+   * reselectTokens to make the links realtime sends activity by, for tokens that are connected.
+   * @return {Promise<string[]>}
+   */
+  async tokensCachedByOtherRules(): Promise<string[]> {
+    const previous = await this._redisClient.set(this._prefix('policy:selectionRules'), SELECTION_RULES_VERSION, {
+      GET: true,
+    });
+    if (previous === SELECTION_RULES_VERSION) return [];
+
+    // `token:<id>:policies`, or `token:<id>:policies:<version>`, but not a set being swapped in
+    const prefix = this._prefix('token:');
+    const cached = /^([^:]+):policies(?::([^:]+))?$/;
+    const tokenIds = new Set<string>();
+    for await (const keys of this._redisClient.scanIterator({ MATCH: `${prefix}*:policies*`, COUNT: 1000 })) {
+      for (const key of keys) {
+        const match = cached.exec(key.slice(prefix.length));
+        if (match && match[2] !== SELECTION_RULES_VERSION) tokenIds.add(match[1]);
+      }
+    }
+    Logging.log(
+      `Selection rules changed (${previous ?? 'none'} to ${SELECTION_RULES_VERSION}), reselecting ${tokenIds.size} tokens`,
+    );
+
+    return [...tokenIds];
+  }
+
+  /**
+   * Works out each token's policies again, one at a time.
+   * @param {string[]} tokenIds
+   * @return {Promise}
+   */
+  async reselectTokens(tokenIds: string[]) {
+    for (const tokenId of tokenIds) {
+      await this.reselectToken(tokenId);
+    }
+  }
+
   private async _markTokensSelectableByPolicy(policy: Policy, skipTokenIds: string[]) {
-    if (!policy.selection) return;
+    const selection = policy.selection;
+    if (!selection) return;
 
-    // ! We're asuming that the selection is just a simple object here and doesn't contain $and or $or.
-    const policySelectionProperties = Object.keys(policy.selection);
-    if (policySelectionProperties.length < 1) return;
-
-    // A token matches a selection if ANY one of its properties satisfies its criterion (see
-    // AccessControlPolicyMatch.__checkPolicySelection, which does matches.some(...), not every(...)).
-    // So the tokens that could now be affected are the UNION of each property's candidates, not the
-    // intersection - a token doesn't need every selected property indexed to match.
+    // A selection selects a token only if every key holds and the token has each one (D-35, see
+    // AccessControlPolicyMatch.selects), so the candidates are the tokens indexed under every top-level key: the
+    // INTERSECTION. A selection of only @and/@or has no such key; a token it selects has at least one of the properties
+    // it names, so its candidates are the UNION of those. Either way a superset, as each candidate is selected again.
     //
-    // For a plain equality criterion we can narrow the candidates to only tokens whose indexed value
-    // actually matches, via the value-qualified index. Everything else (@not, ranges, dates, @rex, or
-    // an array rhs) falls back to the broad "has this property at all" index, same as before.
-    const propertyIndexKeys = policySelectionProperties.map((prop) => {
-      const criterion = policy.selection?.[prop];
-      const [operator] = Object.keys(criterion ?? {});
-      const rhs = criterion?.[operator];
+    // A key with a plain @eq narrows to the tokens indexed under its value. The value index is upper-cased, so it holds
+    // the tokens of every case of the value; selection compares exactly (D-32), so that's still a superset. Anything
+    // else (@not, ranges, dates, @rex, a list) uses the broad "has this property at all" index.
+    const topLevelKeys = Object.keys(selection).filter((key) => key !== '@and' && key !== '@or');
+    const namedKeys = topLevelKeys.length > 0 ? topLevelKeys : AccessControlPolicyMatch.selectionKeys(selection);
+    if (namedKeys.length < 1) return;
 
-      if ((operator === '@eq' || operator === '$eq') && rhs !== null && rhs !== undefined) {
+    const propertyIndexKeys = namedKeys.map((prop) => {
+      const criteria = topLevelKeys.length > 0 ? selection[prop] : null;
+      const rhs = criteria && !Array.isArray(criteria) ? (criteria['@eq'] ?? criteria['$eq']) : undefined;
+
+      if (typeof rhs === 'string' || typeof rhs === 'number') {
         return this._prefix(`policy:propertyIndex:${prop}:${this._normalisePropertyValue(rhs)}`);
       }
 
       return this._prefix(`policy:propertyIndex:${prop}`);
     });
 
-    const tokenIds = (await this._redisClient.sUnion(propertyIndexKeys)).filter((id) => !skipTokenIds.includes(id));
+    const candidates =
+      topLevelKeys.length > 0
+        ? await this._redisClient.sInter(propertyIndexKeys)
+        : await this._redisClient.sUnion(propertyIndexKeys);
+    const tokenIds = candidates.filter((id) => !skipTokenIds.includes(id));
     if (tokenIds.length < 1) {
-      Logging.logSilly(`No tokens found for policy properties: ${JSON.stringify(policySelectionProperties)}`);
+      Logging.logSilly(`No tokens found for policy properties: ${JSON.stringify(namedKeys)}`);
       return;
     }
 
@@ -492,7 +556,7 @@ export class PolicyCache {
     await Promise.all(tokenIds.map((tokenId) => this.setTokenIdAsStale(tokenId)));
   }
 
-  // Matches the case-insensitive comparison AccessControlHelpers.evaluateOperation uses for @eq/@not.
+  // Values are indexed upper-cased, so an index entry holds every case of a value; see _markTokensSelectableByPolicy
   private _normalisePropertyValue(value: PolicyProperty): string {
     return value.toString().toUpperCase();
   }

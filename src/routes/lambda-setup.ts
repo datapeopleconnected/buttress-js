@@ -271,16 +271,20 @@ export class RoutesLambdaSetup {
       LambdaExecutionData.metadata.push({ key: 'HEADERS', value: JSON.stringify(headers) });
     }
 
-    // An endpoint that uses the caller's token runs as the caller only for a token of the lambda's own app
-    const callerToken = req.context.token;
+    // The caller's token is only known to a lambda of its own app, whether or not the endpoint runs as the caller.
+    // Not `context.token`, which is the lambda's own for an endpoint that doesn't use the caller's token.
+    const callerToken = req.context.callerToken;
+
     const callerTokenId =
-      triggerAPI.apiEndpoint.useCallerToken && callerToken && String(callerToken._appId) === String(lambda._appId)
+      callerToken && String(callerToken._appId) === String(lambda._appId)
         ? Model.getCoreModel(TokenSchemaModel).createId(callerToken.id)
         : null;
 
     const lambdaExecution = (await Model.getCoreModel(LambdaExecutionSchemaModel).add(LambdaExecutionData, {
       _appId: lambda._appId,
-      _tokenId: callerTokenId,
+      // An endpoint that uses the caller's token runs as the caller
+      _tokenId: triggerAPI.apiEndpoint.useCallerToken ? callerTokenId : null,
+      _callerTokenId: callerTokenId,
     })) as LambdaExecution;
 
     const data: LambdaExecutionMessage = {

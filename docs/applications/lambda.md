@@ -101,3 +101,26 @@ bjs lambda list-property
   It's now stored `PRIVATE`, and a lambda already stored without a type is treated as `PRIVATE`: set its `type` to
   `PUBLIC` if it should keep taking calls without a token.
 - Keep lambda git inputs pinned and auditable.
+- Deploying a lambda again takes a branch that doesn't track the repository's (as git sets one up with
+  `branch.autoSetupMerge` off), and refuses a branch the repository doesn't have with a 400, `branch_not_found`.
+  Earlier releases refused the first as `branch_not_found` and failed on the second as a server error.
+- A run ends once the promise its entry point returns has settled and the execution is recorded. Work it leaves running,
+  such as a `sleep()` or `fetch()` it didn't await, stops then: its sleeps and requests are cancelled, and anything it
+  calls after that (`setResult`, logging, `updateMetadata`, `fetch`, ...) is refused. Earlier releases let that work go
+  on into the worker's later runs, where it answered, logged and acted for them. Await what a lambda needs done before
+  it returns.
+- A value a lambda gives the server (its result, a log, what it passes to `fetch`, `updateMetadata` or a plugin) has to
+  be one the server can write out as JSON in 128 MB: a result over that, or one that refers to itself, fails the run;
+  a log over it is logged as a note saying so; and a call given one rejects. Only a value that refers to the same
+  objects many times over can get that big, as the lambda's own memory is no bigger. Earlier releases tried to write
+  such a value out, which could stop the worker running any lambda.
+- A `fetch()` of something that isn't a URL, whether given alone or as the request's `url`, rejects at once with an
+  error whose message is `fetch_invalid_url` and code 400, which the lambda can catch. Earlier releases left that
+  `fetch()` unsettled, so the run failed after the runner's timeout as `lambda_execution_timed_out`.
+- A `PATH_MUTATION` trigger's `paths` are matched one segment at a time: `*` stands for any one segment and a trailing
+  `*` for anything beneath, so `car.*.name` runs for a change to `car.<id>.name` but not to `car.<id>.nameplate`. A
+  change also runs the lambdas watching paths beneath it, so deleting a car runs one watching `car.*.name`, while
+  adding one runs only those watching `car` or every car (`car.*...`). A path ending `.length` runs when the array is
+  set, added to, or has an item removed, and a watched number runs when it's incremented. Earlier releases matched
+  paths as text, so `car.*.name.*` ran for a change to `car.<id>.nameplate` or `car.<id>.parts.0.name`, and missed
+  removals for a `.length` path and increments.

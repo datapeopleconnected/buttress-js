@@ -91,7 +91,7 @@ export const refuseEntitiesOutsidePolicy = (
   if (!ac) return;
   for (const [idx, entity] of entities.entries()) {
     const stored = sanitizeSchemaObject(model.schemaData, entity) as Record<string, unknown>;
-    if (!ACM.canCreate(ac, stored)) {
+    if (!ACM.canCreate(ac, stored, model)) {
       throw Helpers.Errors.forbidden(
         'access_denied',
         `${schemaName}: the policy does not allow the entity at index ${idx}`,

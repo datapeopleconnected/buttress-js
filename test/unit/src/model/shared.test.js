@@ -17,7 +17,13 @@
 import { describe, it } from 'mocha';
 import assert from 'assert';
 
-import { invalidEntityError, invalidUpdateError, validateSchemaObject, validateUpdate } from '../../../../dist/model/shared.js';
+import {
+  invalidEntityError,
+  invalidUpdateError,
+  sanitizeSchemaObject,
+  validateSchemaObject,
+  validateUpdate,
+} from '../../../../dist/model/shared.js';
 import { resolveUpdatePath } from '../../../../dist/model/update-paths.js';
 import { getFlattenedSchema } from '../../../../dist/helpers/index.js';
 
@@ -196,6 +202,83 @@ describe('model/shared: values converted as the schema types them', () => {
 
   it('takes a uuid in its usual form', () => {
     assert.strictEqual(validateSchemaObject(flags, { ref: UUID }).isValid, true);
+  });
+});
+
+// An item an update writes to an array with an item __schema is the item a create would store (SR-DPC-001 D2)
+describe('model/shared: array items an update writes', () => {
+  const REF = '507f1f77bcf86cd799439011';
+  const logbook = {
+    name: 'logbook',
+    type: 'collection',
+    properties: {
+      entries: {
+        __type: 'array',
+        __allowUpdate: true,
+        __schema: {
+          at: { __type: 'date', __default: null, __allowUpdate: true },
+          count: { __type: 'number', __default: 0, __allowUpdate: true },
+          ref: { __type: 'id', __default: null, __allowUpdate: true },
+          note: { __type: 'string', __default: 'none', __allowUpdate: true },
+          _secret: { __type: 'string', __default: 'server', __allowUpdate: true },
+          parts: {
+            __type: 'array',
+            __allowUpdate: true,
+            __schema: { qty: { __type: 'number', __default: 1, __allowUpdate: true } },
+          },
+        },
+      },
+    },
+  };
+  const given = () => ({ at: '2026-01-02T03:04:05.000Z', count: '7', ref: REF, _secret: 'client', extra: 'x' });
+  const stored = { at: new Date('2026-01-02T03:04:05.000Z'), count: 7, ref: REF, note: 'none', _secret: 'server', parts: [] };
+  const validate = validateUpdate(logbook);
+
+  const valuesOf = (body) => {
+    const { validation, body: updates } = validate(body);
+    assert.strictEqual(validation.isValid, true);
+    return updates.map((update) => update.value);
+  };
+
+  it('stores the item a create would, for the same item', () => {
+    assert.deepStrictEqual(sanitizeSchemaObject(logbook, { entries: [given()] }).entries, [stored]);
+  });
+
+  it('pushes one item as it is stored: values as their types, defaults, no unknown or _ fields', () => {
+    assert.deepStrictEqual(valuesOf({ path: 'entries', value: given() }), [stored]);
+  });
+
+  it('sets one item by its index as it is stored', () => {
+    assert.deepStrictEqual(valuesOf({ path: 'entries.0', value: given() }), [stored]);
+  });
+
+  it('replaces the whole array with each item as it is stored', () => {
+    assert.deepStrictEqual(valuesOf({ path: 'entries', value: [given(), {}] }), [
+      [stored, { at: null, count: 0, ref: null, note: 'none', _secret: 'server', parts: [] }],
+    ]);
+  });
+
+  it('reads each of a request\'s updates, as a bulk update item gives them', () => {
+    assert.deepStrictEqual(
+      valuesOf([
+        { path: 'entries', value: given() },
+        { path: 'entries.1', value: given() },
+      ]),
+      [stored, stored],
+    );
+  });
+
+  it('reads an item of an array inside an item through its own item schema', () => {
+    assert.deepStrictEqual(valuesOf({ path: 'entries.0.parts', value: { qty: '3', _x: 1, extra: 1 } }), [{ qty: 3 }]);
+    assert.deepStrictEqual(valuesOf({ path: 'entries.0.parts.2', value: {} }), [{ qty: 1 }]);
+  });
+
+  it("replaces the update's value, leaving the item it was given as it was", () => {
+    const item = given();
+    const update = { path: 'entries', value: item };
+    validate(update);
+    assert.deepStrictEqual(update.value, stored);
+    assert.deepStrictEqual(item, given());
   });
 });
 

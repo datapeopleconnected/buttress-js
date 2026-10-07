@@ -42,8 +42,17 @@ const rows = [
   { id: '6abd00000000000000000002', name: 'theirs', _appId: OTHER_APP },
 ];
 
-// Answers queries on the rows above, as a datastore would, and records the calls that reach it
-const createAdapter = () => {
+// A query as the MongoDB adapter hands it to MongoDB: a top-level `id` becomes `_id`, the last one given winning
+const stored = (query) =>
+  Object.fromEntries(
+    Object.entries(query).map(([key, value]) => {
+      if (key === '$and' || key === '$or') return [key, value.map(stored)];
+      return [key === 'id' ? '_id' : key, value];
+    }),
+  );
+
+// Answers queries on the rows given, as a datastore would, and records the calls that reach it
+const createAdapter = (data = rows) => {
   const calls = [];
   const matches = (row, query) =>
     Object.entries(query).every(([key, value]) => {
@@ -57,23 +66,23 @@ const createAdapter = () => {
     calls,
     find: (query) => {
       calls.push(['find', query]);
-      return Readable.from(rows.filter((row) => matches(row, query)));
+      return Readable.from(data.filter((row) => matches(row, stored(query))));
     },
     findOne: async (query) => {
       calls.push(['findOne', query]);
-      return rows.find((row) => matches(row, query)) ?? null;
+      return data.find((row) => matches(row, stored(query))) ?? null;
     },
     findById: async (id) => {
       calls.push(['findById', id]);
-      return rows.find((row) => row.id === id) ?? null;
+      return data.find((row) => row.id === id) ?? null;
     },
     count: async (query) => {
       calls.push(['count', query]);
-      return rows.filter((row) => matches(row, query)).length;
+      return data.filter((row) => matches(row, stored(query))).length;
     },
     exists: async (id, extra) => {
       calls.push(['exists', id, extra]);
-      return rows.some((row) => row.id === id && matches(row, extra));
+      return data.some((row) => matches(row, stored({ _id: id, ...extra })));
     },
     updateByPaths: async (id) => calls.push(['updateByPaths', id]),
     rm: async (id) => calls.push(['rm', id]),
@@ -269,21 +278,83 @@ describe('model/type/TenantScopedModel', () => {
     });
   });
 
+  // An app is its own tenant, so the clause names `id`, as does the app asked for
   describe('the apps collection', () => {
-    it('adds no app through the scoped model', async () => {
+    const apps = [
+      { id: APP, name: 'ours' },
+      { id: OTHER_APP, name: 'theirs' },
+    ];
+    const createAppModel = () => {
       const model = new StandardModel({ name: 'apps', type: 'collection', properties: {} }, null, services);
-      model.adapter = createAdapter();
+      model.adapter = createAdapter(apps);
+      return model;
+    };
+    const scoped = (model = createAppModel()) => new TenantScopedModel(model, APP, 'id');
+    const appNotFound = (id) => ({ status: 404, code: 'not_found', details: { schema: 'app', id } });
 
-      await assert.rejects(() => new TenantScopedModel(model, APP, 'id').add({ name: 'new' }, {}), /an app/);
+    it('adds no app through the scoped model', async () => {
+      await assert.rejects(() => scoped().add({ name: 'new' }, {}), /an app/);
     });
 
     it('is scoped by the app\'s own id', async () => {
-      const model = new StandardModel({ name: 'apps', type: 'collection', properties: {} }, null, services);
-      model.adapter = createAdapter();
+      const model = createAppModel();
 
-      await (await new TenantScopedModel(model, APP, 'id').find({})).toArray();
+      await (await scoped(model).find({})).toArray();
 
       assert.deepStrictEqual(model.adapter.calls, [['find', { id: APP }]]);
+    });
+
+    it("finds the app's own row by id, and gives null for another app's", async () => {
+      const model = scoped();
+
+      assert.strictEqual((await model.findById(APP))?.name, 'ours');
+      assert.strictEqual(await model.findById(OTHER_APP), null);
+    });
+
+    it("finds the app's own row by id or fails, answering another app's as not found", async () => {
+      const model = scoped();
+
+      assert.strictEqual((await model.findByIdOrFail(APP)).name, 'ours');
+      await assert.rejects(() => model.findByIdOrFail(OTHER_APP), appNotFound(OTHER_APP));
+    });
+
+    it("says another app doesn't exist", async () => {
+      const model = scoped();
+
+      assert.deepStrictEqual([await model.exists(APP), await model.exists(OTHER_APP)], [true, false]);
+      assert.strictEqual(await model.exists('not-an-id'), false);
+    });
+
+    it("checks the app's own row exists, answering another app's as not found", async () => {
+      const model = scoped();
+
+      await model.assertExists(APP);
+      await assert.rejects(() => model.assertExists(OTHER_APP), appNotFound(OTHER_APP));
+    });
+
+    it("gives the model for the app's own row, and refuses it for another app's", async () => {
+      const model = createAppModel();
+
+      assert.strictEqual(await scoped(model).owned(APP), model);
+      await assert.rejects(() => scoped(model).owned(OTHER_APP), appNotFound(OTHER_APP));
+    });
+
+    it("refuses to update or remove another app, without writing", async () => {
+      const model = createAppModel();
+
+      await assert.rejects(() => scoped(model).updateByPath([{ path: 'name', value: 'x', contextPath: '^name$' }], OTHER_APP),
+        appNotFound(OTHER_APP));
+      await assert.rejects(() => scoped(model).rm(OTHER_APP), appNotFound(OTHER_APP));
+      assert.deepStrictEqual(writes(model), []);
+    });
+
+    it('updates and removes its own app', async () => {
+      const model = createAppModel();
+
+      await scoped(model).updateByPath([{ path: 'name', value: 'x', contextPath: '^name$' }], APP);
+      await scoped(model).rm(APP);
+
+      assert.deepStrictEqual(writes(model), [['updateByPaths', APP], ['rm', APP]]);
     });
   });
 });

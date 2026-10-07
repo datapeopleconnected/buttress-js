@@ -24,6 +24,7 @@ const { default: ButtressAPI } = ButtressExport;
 import { Schema } from '../../helpers/schema.js';
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
+import { dataSharingDestinationProblem } from '../../helpers/egress.js';
 
 import StandardModel from '../type/standard.js';
 import { TenantKey } from '../type/tenant-scoped.js';
@@ -254,7 +255,7 @@ export default class AppSchemaModel extends StandardModel<App> {
             },
           },
           {
-            verbs: ['GET', 'SEARCH', 'PUT'],
+            verbs: ['GET', 'QUERY', 'PUT'],
             schema: ['app'],
             query: {
               _id: {
@@ -422,6 +423,13 @@ export default class AppSchemaModel extends StandardModel<App> {
         if (!DSA) continue;
         // Load DSA
 
+        // Only to a host the operator allows, when they've set a list, as the agreement's other connections are
+        const destination = await dataSharingDestinationProblem([DSA.remoteApp.endpoint]);
+        if (destination) {
+          Logging.logWarn(`Unable to merge the schema of data sharing ${DSA.id} partner: data_sharing_${destination}`);
+          continue;
+        }
+
         // TODO: Should being using an adapter via the datastore.
         const api = ButtressAPI.new();
         let remoteSchema: Schema[];
@@ -430,7 +438,6 @@ export default class AppSchemaModel extends StandardModel<App> {
             buttressUrl: DSA.remoteApp.endpoint,
             apiPath: DSA.remoteApp.apiPath,
             appToken: DSA.remoteApp.token,
-            allowUnauthorized: true, // Move along, nothing to see here...
             version: 1,
             // A partner that can't be reached falls back to the local schema, so don't wait on retries
             maxRetries: 0,
@@ -453,7 +460,15 @@ export default class AppSchemaModel extends StandardModel<App> {
           continue;
         }
 
+        // A partner that answers with something other than a list of schemas is left out, as one that's down is
+        if (!Array.isArray(remoteSchema)) {
+          Logging.logWarn(`Unable to merge the schema of data sharing ${DSA.id} partner: it didn't answer with a list`);
+          continue;
+        }
+
         remoteSchema.forEach((rs) => {
+          if (!rs || typeof rs !== 'object') return;
+
           schemaWithRemoteRef
             .filter((s) => {
               if (!s.remotes) return false;

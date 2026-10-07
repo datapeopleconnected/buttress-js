@@ -150,12 +150,18 @@ export class ModelManager {
         datastore = Datastores.getInstance('core');
       }
 
+      // An app whose stored schema can't be read or built is left without models, rather than stopping the apps
+      // after it getting theirs. Only the stored schema is read here; anything else that fails is rethrown.
+      const decoded = Helpers.Schema.decodeStored(app);
+      if (!decoded) continue;
+
       let builtSchemas: Schema[];
       try {
-        builtSchemas = await Helpers.Schema.buildCollections(Helpers.Schema.decode(app.__schema));
+        builtSchemas = await Helpers.Schema.buildCollections(decoded);
       } catch (err: unknown) {
-        if (err instanceof Helpers.Errors.SchemaInvalid) continue;
-        else throw err;
+        if (!(err instanceof Helpers.Errors.SchemaInvalid)) throw err;
+        Logging.logWarn(`Unable to build the schema of app ${app.id}: ${err.message}`);
+        continue;
       }
 
       for await (const schema of builtSchemas) {
@@ -268,6 +274,7 @@ export class ModelManager {
 
         // ? Datastore shouldn't really care about the data sharing ID.
         remoteDatastore.dataSharingId = dataSharing.id;
+        remoteDatastore.partnerAppId = dataSharing.remoteApp.appId ?? null;
 
         datastores.push(remoteDatastore);
       }

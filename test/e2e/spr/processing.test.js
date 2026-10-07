@@ -616,7 +616,10 @@ describe('Processing', async () => {
 			fullAccess.stop();
 			ownCars.stop();
 
-			assert.deepStrictEqual(fullAccess.packets.map((p) => [p.verb, p.path]), ids.map((id) => ['delete', `/car/${id}`]));
+			// Each delete is a request of its own, and its activity is sent once it has answered, so the next delete's can
+			// reach the SPR first: only each entity's own activities keep their order
+			const deletes = (packets) => packets.map((p) => [p.verb, p.path]).sort(([, a], [, b]) => a.localeCompare(b));
+			assert.deepStrictEqual(deletes(fullAccess.packets), deletes(ids.map((id) => ({ verb: 'delete', path: `/car/${id}` }))));
 			assert.deepStrictEqual(ownCars.packets.map((p) => [p.verb, p.path]), [['delete', `/car/${refused.id}`]]);
 		});
 	});
@@ -649,6 +652,28 @@ describe('Processing', async () => {
 
 			assert.strictEqual(reason, 'io server disconnect');
 			assert(!received.includes('deleted-token-car'), 'the socket received activity after its token was deleted');
+		});
+	});
+
+	describe("A deleted user's tokens (SR-DPC-001 S10)", () => {
+		it("Should close the socket of a token made for the user after it, as it does the first token's", async function () {
+			this.timeout(20000);
+			const user = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'deleted-user-tokens', { adminAccess: true });
+			const second = await bjsReq({
+				url: `${ENDPOINT.REST}/api/v1/user/${user.id}/token`,
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ domains: [Config.app.host], policyProperties: { adminAccess: true } }),
+			}, testEnv.apps.app1.token);
+			const socket = io(`${ENDPOINT.SOCK}/${testEnv.apps.app1.apiPath}`, { auth: { token: second.value }, forceNew: true });
+			await new Promise((resolve) => socket.on('connect', resolve));
+			const disconnected = new Promise((resolve) => socket.on('disconnect', resolve));
+
+			await bjsReq({ url: `${ENDPOINT.REST}/api/v1/user/${user.id}`, method: 'DELETE' }, testEnv.apps.app1.token);
+			const reason = await Promise.race([disconnected, new Promise((r) => setTimeout(() => r('still connected'), 5000))]);
+			socket.close();
+
+			assert.strictEqual(reason, 'io server disconnect');
 		});
 	});
 

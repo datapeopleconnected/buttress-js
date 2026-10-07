@@ -46,10 +46,12 @@ export class RoutesTokens {
     }
 
     if (!this._reloadQueued) {
-      this._reloadQueued = this._loading.then(() => {
+      // Runs whether the running load succeeds or fails, as a failed one leaves the cache as stale as it was
+      const reload = () => {
         this._reloadQueued = null;
         return this.loadTokens();
-      });
+      };
+      this._reloadQueued = this._loading.then(reload, reload);
     }
     return this._reloadQueued;
   }

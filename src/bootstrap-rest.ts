@@ -35,7 +35,6 @@ import { getThrownErrorMessage } from './helpers/index.js';
 import * as Schema from './helpers/schema.js';
 import type { Schema as SchemaDefinition } from './types/schema.js';
 
-import { SourceDataSharingRouting } from './services/source-ds-routing.js';
 import type { AppSchemaUpdatedMessage, AppSchemaAppliedMessage } from './services/nrp.js';
 import { SchemaChangeAcks, restProcessIdentity } from './services/schema-applied.js';
 
@@ -112,7 +111,6 @@ export default class BootstrapRest extends Bootstrap {
     const policyCache = this.__services.get('policyCache') as PolicyCache;
     if (policyCache === undefined) throw new Error('PolicyCache not found whilst trying to init BootstrapRest');
 
-    this.__services.set('sdsRouting', new SourceDataSharingRouting(redisClient));
     this.__services.set('modelManager', Model);
 
     // Call init on our singletons (this is mainly so they can setup their redis-pubsub connections)
@@ -154,12 +152,6 @@ export default class BootstrapRest extends Bootstrap {
       Logging.logSilly('Closing _redisClientRest client');
       (this.__services.get('redisClient') as RedisClientType).quit();
       this.__services.delete('redisClient');
-    }
-
-    if (this.__services.has('sdsRouting')) {
-      Logging.logSilly('Closing _sdsRouting');
-      (this.__services.get('sdsRouting') as SourceDataSharingRouting).clean();
-      this.__services.delete('sdsRouting');
     }
 
     // Destory all models
@@ -229,6 +221,14 @@ export default class BootstrapRest extends Bootstrap {
       }
 
       await this.__updateAppSchema();
+
+      // Tokens whose policies were cached by other selection rules are worked out again by these rules while requests are
+      // served, for realtime's links; a request works out a token's policies by them when it has none cached
+      const policyCache = this.__services.get('policyCache') as PolicyCache;
+      const tokenIds = await policyCache.tokensCachedByOtherRules();
+      policyCache.reselectTokens(tokenIds).catch((err: unknown) => {
+        Logging.logError(`Unable to reselect the tokens' cached policies: ${getThrownErrorMessage(err)}`);
+      });
     } else {
       Logging.logVerbose(`Secondary Main REST`);
     }
@@ -251,10 +251,10 @@ export default class BootstrapRest extends Bootstrap {
     app.use(
       cors({
         origin: true,
-        methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,SEARCH',
+        methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,QUERY,SEARCH',
         credentials: true,
-        // So browser clients on another origin can read it.
-        exposedHeaders: [BULK_REFUSED_HEADER],
+        // So browser clients on another origin can read them.
+        exposedHeaders: [BULK_REFUSED_HEADER, 'Accept-Query', 'Deprecation'],
       }),
     );
     app.use(Express.static(`${Config.paths.appData}/public`));
@@ -429,19 +429,12 @@ export default class BootstrapRest extends Bootstrap {
 
     const rxsApps = await Model.getCoreModel(AppSchemaModel).findAll();
     for await (const app of rxsApps as AsyncIterable<App>) {
-      const appSchema = Schema.decode(app.__schema);
+      // An app whose stored schema can't be read is left as it is, rather than stopping REST starting
+      const appSchema = Schema.decodeStored(app);
+      if (!appSchema) continue;
       Logging.log(`Adding ${localSchema.length} local schema for ${app.id}:${app.name}:${appSchema.length}`);
-      localSchema.forEach((cS) => {
-        const appSchemaIdx = appSchema.findIndex((s) => s.name === cS.name);
-        const schema = appSchema[appSchemaIdx];
-        if (!schema) {
-          return appSchema.push(cS);
-        }
-        schema.properties = Object.assign(schema.properties, cS.properties);
-        appSchema[appSchemaIdx] = schema;
-      });
 
-      await Model.getCoreModel(AppSchemaModel).updateSchema(app.id, appSchema);
+      await Model.getCoreModel(AppSchemaModel).updateSchema(app.id, Schema.merge(appSchema, localSchema));
     }
   }
 }

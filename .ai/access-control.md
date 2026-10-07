@@ -15,11 +15,12 @@ See [docs/applications/policy.md](../docs/applications/policy.md) for the policy
 
 Backs both paths with Redis-cached policy state, all keys namespaced under `Config.redis.scope`:
 
-- `token:<id>:policies` — set of policy ids applicable to a token. `'STALE'` is a sentinel member meaning
-  "force a rehydrate" (written by `setTokenIdAsStale`, e.g. after `Token.setPolicyPropertiesById`).
+- `token:<id>:policies:<version>` (`tokenPoliciesKey`) — set of policy ids applicable to a token, as selected by
+  `SELECTION_RULES_VERSION`'s rules. `'STALE'` is a sentinel member meaning "force a rehydrate" (written by
+  `setTokenIdAsStale`, e.g. after `Token.setPolicyPropertiesById`).
 - `policies` (hash) — policy id → serialized `Policy` document, populated lazily via `getPolicies()`.
-- `policy:<id>:tokens` / `connected-tokens` (sorted set, score = expiry epoch) — which tokens are
-  currently connected to a socket and which policies apply to them; used by SPR to know who to notify.
+- `policy:<id>:tokens:<version>` (`policyTokensKey`) / `connected-tokens` (sorted set, score = expiry epoch) — which
+  tokens are currently connected to a socket and which policies apply to them; used by SPR to know who to notify.
   `connected-token:<id>:sockets` holds each connected token's socket ids (`worker:socket:connection` /
   `disconnect` send `{tokenId, socketId}`), so a token stays connected until its last socket closes. Each Socket
   process publishes `worker:socket:heartbeat` with the tokens it has sockets for every 15 minutes, which renews
@@ -27,6 +28,13 @@ Backs both paths with Redis-cached policy state, all keys namespaced under `Conf
   connection changes and the expiry sweep run one at a time in the SPR primary.
 - `policy:propertyIndex:<key>` — reverse index from a policy-selection property name to token ids, used
   by `invalidatePolicyAndTokensBySelection()` to mark affected tokens stale when a policy changes.
+- The two keys above carry `SELECTION_RULES_VERSION`, so instances on other selection rules, as in a rolling deploy,
+  never use each other's sets (earlier releases' keys have no version); a token with none cached under this version
+  is worked out by these rules on its next request. `policy:selectionRules` holds the version last started on: the
+  primary REST main process swaps it at start-up, and when it differed, `tokensCachedByOtherRules` finds the tokens
+  cached under other versions and they're reselected in the background (`reselectTokens`), for realtime's links. Bump
+  the version whenever `AccessControlPolicyMatch.selects` changes what it selects. Not covered: while versions
+  overlap, a token or policy changed through an instance on other rules marks only that version's sets stale.
 - `app:<appId>:schema:<schemaName>` (+ `%ALL%` / `%APP_SCHEMA%` wildcard variants; `%CORE_SCHEMA%` is written but not read) — index
   used by SPR's `getPoliciesByRestActivity()` to find candidate policies for an incoming activity without
   scanning every policy.
@@ -43,27 +51,57 @@ after token authentication. Flow:
 1. System tokens (`req.context.token.type === 'system'`) and plugin paths skip straight through.
 2. Resolves `schemaName` from the URL, loads/caches the app's schema (`__cacheAppSchema`).
 3. `PolicyCache.getPoliciesByToken(token)` — the token's applicable policies (sorted by `priority`).
-4. `__getOutcome(tokenPolicies, req, schemaName, appId)` — the core evaluation pipeline:
-   - `filterPolicyConfigs` (in [helpers.ts](../src/access-control/helpers.ts)) — narrows each policy's
-     `config[]` entries to ones matching the request verb + schema.
-   - `AccessControlConditions.filterPoliciesByPolicyConditions` — evaluates `config.condition` blocks
-     against a generated request environment (`AccessControlEnv.generateRequestGlobalEnvs`, see below);
-     drops policies whose condition fails.
-   - `AccessControlFilter.buildApplicablePoliciesQuery` — resolves each policy's `query` block (which may
-     reference `env.*` paths) into a concrete MongoDB query fragment.
-   - `AccessControlProjection.filterPoliciesByPolicyProjection` — resolves field-level projection
-     restrictions; if this leaves zero applicable policies, access is denied
-     (`access-control-properties-permission-error`).
-   - Remaining policy configs are merged where possible (same verbs/schema/query → merge projections;
-     same verbs/schema/no-projection → OR the queries together) into `parsedPolicyConfig[]`, stored on
-     `req.context.ac.policyConfigs` for the route handler to apply to its DB query.
+4. `__getOutcome(tokenPolicies, req, schemaName, appId)` — REST's side of the policy engine:
+   - `evaluate(policies, context)` ([evaluator.ts](../src/access-control/evaluator.ts)) gives the token's
+     **grants** on the schema for the verb, one per config that applies: the policy hasn't reached its `limit`,
+     the config is for the verb and schema (`filterPolicyConfigs`, by the items of its `verbs` and `schema` lists, so a
+     config with text there grants nothing; `grantsVerb()` treats `QUERY` and `SEARCH` as one verb, so a config listing
+     either grants both methods), the schema exists, its `condition` holds
+     (`AccessControlConditions.filterPoliciesByPolicyConditions`, with the request env; a config without a
+     condition applies), and its `query` can be built (`Filter.buildPolicyQuery`; an `#env.` value that isn't set,
+     an operator nothing knows, or a logical operator not given a list of queries drops the config). An `#env.` value
+     that refers back to itself (`CircularEnvError`: `getEnvValue` passes on the keys it's reading, through env
+     lookups' queries too, and stops on a repeat or past 16 values) drops a config whose query or condition reads it. Each
+     check that leaves nothing refuses with its `PolicyError`. A grant is `{policies, appId, config, query, projection}`:
+     the query with its env read and access keys dropped (`{}` reads every entity), and the properties it reads
+     (null for every one).
+   - `__readableGrants` parses each grant's query against the app's model, as `models-access` will read it, and
+     leaves out one the schema can't read (an operand an operator can't take, from a policy saved before
+     `checkPolicyConfig` checked operands), logging it; none left is 403 `access_denied`. It runs before merging,
+     so a dropped query doesn't take a query OR'd with it along. Core schemas skip it: their rows aren't read
+     through policies' queries (D-21).
+   - `Projection.filterGrantsByRequest` keeps the grants the request's reads and writes can go through: a read
+     may only query (at any depth of `$and`/`$or`/`$nor`) or sort by properties a grant reads, as a sort's order
+     would show the property, an update's paths must be
+     within them (else 403 `property_access_denied`), a create's other properties get their defaults.
+   - `mergeGrants` merges without changing what they give together: the same query unions properties (every
+     property if one reads all), and grants reading every property OR their queries. The result goes on
+     `req.context.ac.policyConfigs` (projection as `{key: 1}`) for the routes.
+   - Routes read through `models-access.ts`: one config is combined with the request's query and projection;
+     several are read in **one** find per source (their queries OR'd), and each entity keeps the properties of
+     the configs whose query matches it (`matchQuery`, as MongoDB matches), so an entity comes once and paging
+     holds. `count` is one `$or` count.
 5. No matching policy at any stage → throws `PolicyError` (403 `access_denied`, `property_access_denied` for
    projections, 404 `unknown_schema`, 401 `app_not_found` for a token outliving its app) → the middleware passes
    it to the error handler (see [routing.md](routing.md#errors-srchelperserrorsts)). **Default is deny, not
    allow.**
-6. If the token has any policy with a `limit` (expiry) within one week, schedules a one-shot cleanup
-   (`_queuePolicyLimitDeleteEvent`) that strips the token's matching `policyProperties` and deletes the
-   policy when it expires.
+6. A policy past its `limit` grants nothing from that moment (`isPolicyExpired`, checked here, in `evaluate` and in the
+   SPR), whether or not it has been removed yet. REST schedules nothing for it: the SPR primary removes it (see
+   [Policy expiry](#policy-expiry)).
+
+Policies are checked when they're saved (`checkPolicyConfig` in
+[policy-definition.ts](../src/access-control/policy-definition.ts)), so the drops above are for policies saved before:
+an operator nothing knows, an operand an operator can't take (`operandProblem` in operators.ts, the rule
+`StandardModel.parseQuery` refuses a search's operands by), a logical operator not given a list of one or more
+queries, and a condition criterion that isn't an object of one or more operators (one with no operator fails when it's
+evaluated, as a selection's selects nothing).
+
+An update is checked by the value it writes (`checkPolicyConfigUpdate`), and, when one writes into a config by its
+index (`writesIntoConfig`), by the configs it leaves: the policy route reads the stored policy and
+`checkUpdatedPolicyConfig` replays the request's updates on its configs as the datastore writes them (missing documents
+made on the way, `null` items before an index past the end of a list), so a path below a config's field, which the
+schema takes as an `object` property's, and a config written past the end are checked too. A route's `updateProblem`
+gets every update a request makes to one row, from each bulk item that names it, in the order they're written.
 
 `AccessControlEnv.generateRequestGlobalEnvs(req, appId, user)` builds the `env` object that policy
 `query`/`condition` values can reference via dotted paths (e.g. `env.userId`) — read
@@ -75,9 +113,10 @@ builds its env without a request, so `env.ipAddress` is always null there.
 ## SPR path: `BootstrapSocketPolicyRouter._handleIncomingMessage` (`src/bootstrap-spr.ts`)
 
 Runs only in the SPR primary process, triggered by the `rest:activity` NRP event that every REST
-`Route._broadcast()` call emits. This is a **separate, coarser** evaluation from the REST middleware —
-it exists because by the time this runs, the write already happened and the question is purely "who
-should be told":
+`Route._broadcast()` call emits (twice per write: a copy for system tokens, `isSuper`, and one for policies). By
+the time this runs the write has happened; the question is who may read it, and what of it. The policies are
+evaluated with the same evaluator as REST (`evaluate` with `reads: true`: configs that let a token read the
+schema, whatever the verb), and an entity is matched as a REST query would match it (D-31).
 
 Only app schemas' activity is routed. Core entities (users, tokens, policies, lambdas, apps…) are never sent
 over sockets: `__handleEntityActivity` drops an activity with `isCoreSchema`, and `%CORE_SCHEMA%` has no
@@ -86,25 +125,55 @@ lookup in the policy cache (decided 2026-09-30).
 `__splitBulkActivity` first turns a bulk update/delete, and a delete-all that the caller's policies limited (its
 `response` lists the deleted ids), into one by-id activity per entity. A deleted entity can't be loaded, so the REST
 route sends it along as it was, in `deletedEntities` (`Route._keepEntitiesBeingDeleted`). A limited delete-all is split
-for system tokens (`isSuper`) too: sent whole, it would clear entities that still exist. Then, for each activity:
+for system tokens (`isSuper`) too: sent whole, it would clear entities that still exist.
 
-1. Loads the mutated entity by id (unless it's a delete with no entity).
-2. `isSuper` activities (from the super/system app) broadcast to every `system`-type token unconditionally.
-3. Otherwise, `PolicyCache.getPoliciesByRestActivity()` finds candidate policies for the schema/app, then
-   for each policy: `filterPolicyConfigs` narrows to matching verb+schema configs.
-4. `containsTokenLevelRef()` (in [helpers.ts](../src/access-control/helpers.ts)) checks whether the
-   policy's env/query/condition references anything token-specific (e.g. `env.userId`). If so, evaluation
-   must happen **per connected token** (`getConnectedTokenIdsByPolicyId` → loop → build a per-token env
-   via `__constructTokenEnv` → evaluate). If not, it evaluates once and broadcasts to every token
-   connected to that policy.
-5. `AccessControlFilters.buildPolicyQuery()` + `evaluateQueryAgainstEntity()` — evaluates the resolved
-   query **in-memory against the already-fetched entity** (not a DB query — the write already happened),
-   deciding broadcast/no-broadcast. Projection (`config.projection`) trims the broadcast payload's
-   `response` fields.
-6. Approved broadcasts are re-emitted as `spr:activity` (`DataShareSocketSharePayload`, batched to 1000
-   token ids at a time via `__broadcastDataByPolicyId`/`__broadcastDataByToken`), which Socket workers
-   pick up in `_workerOnSPRActivity` and turn into `db-activity` Socket.IO emits.
+Each entity activity goes through a `KeyedQueue` keyed by app, schema and entity, so an entity's activities are
+relayed in the order they arrive (other entities' alongside), and one that fails is logged. A bulk activity's
+entities each take their place in their queue as it arrives, chained so they're still handled one after another; a
+later activity for one of them can't overtake it. Then `__handleEntityActivity`:
+
+1. Drops `broadcast: false` activities; sends the `isSuper` copy whole to every system token (one find, no entity
+   read).
+2. `PolicyCache.getPoliciesByRestActivity()` finds the candidate policies for the schema/app (one `SUNION`, one
+   `HMGET`), keeping those not past their `limit` with configs that let a token read the schema.
+3. `PolicyCache.getConnectedTokenIdsByPolicyIds()` gives each one's connected tokens (an `SMEMBERS` per policy, one
+   `ZMSCORE` for all, Redis 6.2+); a policy no connected token holds isn't evaluated, and nothing is read for it.
+4. A policy whose configs' queries or conditions refer to the token's user (`dependsOnToken`, which follows env
+   references through the policy's and config's env and env lookups) is evaluated for each of its tokens, with
+   that token's user; the tokens and their users are read in one find each (`__constructTokenEnvs`). Other
+   policies are evaluated once, with the app's env.
+5. `__readingFor` evaluates a policy and checks which grants' queries read the entity
+   (`Filter.evaluateQueryAgainstEntity`, which reads nothing for a query the schema can't read); the entity is read
+   once, when first needed. A policy that fails to be evaluated is logged and reads nothing, and the token's other
+   policies still apply. A token may read the union of what its policies' reading grants let it (`addReading`).
+6. `__relay` groups tokens that may read the same, trims the activity's `response` to those properties
+   (`Projection.projectActivityResponse`, which understands PUT diffs and sends nothing when none are visible), and
+   re-emits it as `spr:activity` (`DataShareSocketSharePayload`, up to 1000 token ids a message), which Socket
+   workers pick up in `_workerOnSPRActivity` and turn into `db-activity` Socket.IO emits. A token gets one activity
+   for an entity, however many of its policies read it.
+
+`test/perf/io-budgets.json`'s `spr` entry pins this work for one write to four sockets.
 
 If you're debugging "REST write succeeded but nobody got a socket update," the fault is almost always
 somewhere in this SPR pipeline or in the `connected-tokens`/`policy:<id>:tokens` cache state, not in the
 REST handler.
+
+## Policy expiry
+
+`PolicyExpiry` ([src/access-control/policy-expiry.ts](../src/access-control/policy-expiry.ts)) removes the policies
+whose `limit` has passed. The SPR primary sweeps at start-up and then a minute after each sweep ends
+(`POLICY_EXPIRY_SWEEP_MS`), so one process does it. A sweep finds the policies whose `limit` has passed
+(`limit: {$lte: now}`, checked again with `policyLimit`; one that isn't a date is left for its author, though
+`isPolicyExpired` takes it as passed) and, for each:
+
+- If it's transient (`transient: true`, which buttress-js-api's `createUserTransientPolicy` sets, giving the token
+  `{[policy.name]: true}`), its `selection` names a property called the policy's `name`, and none of the app's other
+  policies whose limit hasn't passed names that property, takes it off each of the app's tokens the selection selects
+  (`updatePolicyProperties`, as `RemoveUserPolicyProperties` does). No other property is touched, and a policy that
+  isn't transient touches none. SR-DPC-001 D1: REST
+  used to queue a timer per worker from a user's request in the week before the limit, which took every key the
+  selection named off that one token, keys other policies selected it by included, and was lost on a restart.
+- Removes the policy (`Policy.rm`, which also takes it out of the cache).
+
+One that can't be removed is logged, and the next sweep tries again. A sweep reads the policies as they're stored, so a
+limit moved or removed before it passes is kept to.

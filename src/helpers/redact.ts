@@ -46,11 +46,14 @@ const isSecretPath = (path: unknown) =>
 
 /**
  * A copy of a request body with the values of credential and secret properties replaced, at any depth, as are the
- * values of updates to paths through them.
+ * values of updates to paths through them. A value that isn't a plain object or a list, such as a date an update's
+ * value was read as, is kept as it is.
  */
 export const redactSecrets = (body: unknown): unknown => {
   if (Array.isArray(body)) return body.map((item) => redactSecrets(item));
   if (typeof body !== 'object' || body === null) return body;
+  const proto: unknown = Object.getPrototypeOf(body);
+  if (proto !== Object.prototype && proto !== null) return body;
 
   const record = body as Record<string, unknown>;
   // An update by path

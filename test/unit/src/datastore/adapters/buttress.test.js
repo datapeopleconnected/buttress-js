@@ -22,6 +22,7 @@ import sinon from 'sinon';
 
 import ButtressAdapter from '../../../../../dist/datastore/adapters/buttress.js';
 import DatastoreFactory from '../../../../../dist/datastore/adapter-factory.js';
+import StandardModel from '../../../../../dist/model/type/standard.js';
 
 // An adapter that talks to a fake remote collection, without connecting to anything
 function createAdapter(collection) {
@@ -88,6 +89,91 @@ describe('datastore/adapters/buttress:rmAll', () => {
   });
 });
 
+describe('datastore/adapters/buttress:exists', () => {
+  const ID = '6abd00000000000000000001';
+  const OTHER = '6abd00000000000000000002';
+  const APP = '6abd0000000000000000000a';
+  const entity = { id: ID, _appId: APP };
+
+  // A partner holding the one entity, which answers a count of an $and of plain values as it would
+  const createCollection = () => ({
+    get: sinon.stub().callsFake(async (id) => (id === ID ? entity : null)),
+    count: sinon.stub().callsFake(async ({ $and: parts }) =>
+      parts.every((part) => Object.entries(part).every(([key, value]) => entity[key] === value)) ? 1 : 0,
+    ),
+  });
+
+  it('asks the partner for the entity when there is no extra filter', async () => {
+    const collection = createCollection();
+    const adapter = createAdapter(collection);
+
+    assert.deepStrictEqual([await adapter.exists(ID), await adapter.exists(OTHER)], [true, false]);
+    sinon.assert.notCalled(collection.count);
+  });
+
+  it('has the partner check an extra filter beside the id, rather than ignoring it', async () => {
+    const collection = createCollection();
+    const adapter = createAdapter(collection);
+
+    assert.deepStrictEqual([await adapter.exists(ID, { _appId: APP }), await adapter.exists(ID, { _appId: OTHER })], [true, false]);
+    sinon.assert.calledWithExactly(collection.count, { $and: [{ id: ID }, { _appId: OTHER }] });
+    sinon.assert.notCalled(collection.get);
+  });
+
+  it('keeps the id asked for when the extra filter names an id of its own, as the apps tenant clause does', async () => {
+    const collection = createCollection();
+
+    assert.strictEqual(await createAdapter(collection).exists(ID, { id: OTHER }), false);
+    sinon.assert.calledOnceWithExactly(collection.count, { $and: [{ id: ID }, { id: OTHER }] });
+  });
+});
+
+// A federated write sends the partner the item validateUpdate read, as the MongoDB adapter stores it (SR-DPC-001 D2)
+describe('datastore/adapters/buttress: array items an update writes', () => {
+  const ID = '6abd00000000000000000001';
+  const schema = {
+    name: 'logbook',
+    type: 'collection',
+    extends: [],
+    properties: {
+      entries: {
+        __type: 'array',
+        __allowUpdate: true,
+        __schema: {
+          at: { __type: 'date', __default: null, __allowUpdate: true },
+          count: { __type: 'number', __default: 0, __allowUpdate: true },
+          _secret: { __type: 'string', __default: 'server', __allowUpdate: true },
+        },
+      },
+    },
+  };
+
+  it('sends the partner the item as it is stored, not as it was given', async () => {
+    const collection = { update: sinon.stub().resolves([{ type: 'vector-add', path: 'entries', value: {} }]) };
+    const services = new Map([
+      ['nrp', { on: () => {}, emit: () => {} }],
+      ['modelManager', {}],
+    ]);
+    const model = new StandardModel(structuredClone(schema), null, services);
+    model.adapter = createAdapter(collection);
+
+    const { validation, body } = model.validateUpdate({
+      path: 'entries',
+      value: { at: '2026-01-02', count: '7', _secret: 'client', extra: 'x' },
+    });
+    assert.strictEqual(validation.isValid, true);
+    await model.updateByPath(body, ID);
+
+    sinon.assert.calledOnce(collection.update);
+    const [id, sent] = collection.update.firstCall.args;
+    assert.strictEqual(id, ID);
+    assert.deepStrictEqual(
+      { path: sent.path, value: sent.value },
+      { path: 'entries', value: { at: new Date('2026-01-02'), count: 7, _secret: 'server' } },
+    );
+  });
+});
+
 describe('datastore/adapters/buttress:connect', () => {
   let server;
   afterEach(() => new Promise((resolve) => (server ? server.close(resolve) : resolve())));
@@ -121,5 +207,45 @@ describe('datastore/adapters/buttress:connect', () => {
     const adapter = DatastoreFactory.create('butt://localhost:8000/?token=t');
 
     assert.strictEqual(adapter.uri.pathname, '/');
+  });
+});
+
+// Each side of a pairing tells the other which app it is, and an agreement paired before asks the partner
+describe('datastore/adapters/buttress: which app a partner is', () => {
+  afterEach(() => sinon.restore());
+
+  const createConnected = (appDataSharing) => {
+    const adapter = new ButtressAdapter(new URL('butt://localhost:8000/partner?token=agreement-token'), {});
+    adapter.init = true;
+    adapter.__connection = { AppDataSharing: appDataSharing };
+    return adapter;
+  };
+
+  it("tells the partner which app it's paired with when it activates the agreement", async () => {
+    const activate = sinon.stub().resolves({ status: true, token: 'new-token' });
+    const adapter = createConnected({ activate });
+
+    await adapter.activateDataSharing('registration-token', 'new-token', '6abd05000000000000000001');
+
+    assert.deepStrictEqual(activate.firstCall.args, [
+      'registration-token',
+      'new-token',
+      { params: { appId: '6abd05000000000000000001' } },
+    ]);
+  });
+
+  it("asks the partner which app the agreement's token is for, with that token", async () => {
+    const request = sinon.stub().resolves({ appId: '6abd05000000000000000002' });
+    const adapter = createConnected({ _request: request });
+
+    assert.strictEqual(await adapter.partnerAppId(), '6abd05000000000000000002');
+    const [method, path, options] = request.firstCall.args;
+    assert.deepStrictEqual([method, path, options.token], ['get', 'identity', 'agreement-token']);
+  });
+
+  it("gives no app for an answer that doesn't name one", async () => {
+    const adapter = createConnected({ _request: sinon.stub().resolves({ appId: 'not-an-id' }) });
+
+    assert.strictEqual(await adapter.partnerAppId(), null);
   });
 });

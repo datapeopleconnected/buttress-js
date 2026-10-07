@@ -83,11 +83,87 @@ describe('helpers.checkAppPolicyProperty', () => {
 		}
 	});
 
-	it('takes an array of values when every one of them is listed, ignoring the case of text', async () => {
+	it('takes an array of values when every one of them is listed', async () => {
 		const list = { role: ['admin', 'user'] };
 
-		assert.strictEqual((await Helpers.checkAppPolicyProperty(list, { role: { '@in': ['ADMIN', 'user'] } })).passed, true);
+		assert.strictEqual((await Helpers.checkAppPolicyProperty(list, { role: { '@in': ['admin', 'user'] } })).passed, true);
 		assert.strictEqual((await Helpers.checkAppPolicyProperty(list, { role: { '@in': ['admin', 'other'] } })).passed, false);
+	});
+
+	// D-34: a token can only be given the values the app lists, as they're listed
+	it('refuses text listed in another case', async () => {
+		const list = { role: ['admin', 'user'] };
+
+		assert.strictEqual((await Helpers.checkAppPolicyProperty(list, { role: 'ADMIN' })).passed, false);
+		assert.strictEqual((await Helpers.checkAppPolicyProperty(list, { role: { '@in': ['ADMIN', 'user'] } })).passed, false);
+	});
+});
+
+describe('helpers.checkAppPolicyProperty, SR-DPC-001 S5', () => {
+	const list = { role: ['admin'] };
+	const check = async (properties) => (await Helpers.checkAppPolicyProperty(list, properties)).passed;
+
+	it('checks every value of an array given as the value', async () => {
+		assert.strictEqual(await check({ role: ['admin'] }), true);
+		assert.strictEqual(await check({ role: ['admin', 'superadmin'] }), false);
+		assert.strictEqual(await check({ role: [] }), false);
+	});
+
+	it('checks the values of every operator an operator object names', async () => {
+		assert.strictEqual(await check({ role: { '@eq': 'admin', '@in': ['admin'] } }), true);
+		assert.strictEqual(await check({ role: { '@eq': 'admin', '@in': ['superadmin'] } }), false);
+		assert.strictEqual(await check({ role: {} }), false);
+	});
+
+	it('refuses a null value rather than failing', async () => {
+		assert.strictEqual(await check({ role: null }), false);
+		assert.strictEqual(await check({ role: { '@eq': null } }), false);
+	});
+});
+
+describe('helpers.checkPolicySelection', () => {
+	const list = { role: ['admin', 'user'], team: ['a', 'b'] };
+	const check = async (selection) => (await Helpers.checkPolicySelection(list, selection)).passed;
+
+	it('takes keys the app lists, with values it lists', async () => {
+		assert.strictEqual(await check({ role: { '@eq': 'admin' }, team: { '@in': ['a', 'b'] } }), true);
+		assert.strictEqual(await check({ role: { '@eq': 'owner' } }), false);
+		assert.strictEqual(await check({ level: { '@eq': 1 } }), false);
+	});
+
+	it('takes @and and @or, each a list of selections the app lists', async () => {
+		assert.strictEqual(await check({ '@or': [{ role: { '@eq': 'admin' } }, { team: { '@eq': 'a' } }] }), true);
+		assert.strictEqual(
+			await check({ role: { '@eq': 'user' }, '@and': [{ team: { '@eq': 'a' } }, { '@or': [{ role: { '@eq': 'admin' } }] }] }),
+			true,
+		);
+	});
+
+	it('refuses a key or value the app does not list within @and or @or', async () => {
+		assert.strictEqual(await check({ '@or': [{ role: { '@eq': 'admin' } }, { level: { '@eq': 1 } }] }), false);
+		assert.strictEqual(await check({ '@and': [{ '@or': [{ team: { '@eq': 'c' } }] }] }), false);
+	});
+
+	it('refuses an @and or @or that is not a list of selections, or is empty', async () => {
+		for (const selection of [
+			{ '@or': [] },
+			{ '@and': [] },
+			{ '@or': { role: { '@eq': 'admin' } } },
+			{ '@or': [{}] },
+			{ '@or': ['admin'] },
+		]) {
+			assert.strictEqual(await check(selection), false, JSON.stringify(selection));
+		}
+	});
+
+	it('refuses a criterion naming an operator nothing knows, even for a listed value', async () => {
+		assert.strictEqual(await check({ role: { '@like': 'admin' } }), false);
+		assert.strictEqual(await check({ '@or': [{ role: { '@eq': 'admin' } }, { team: { $foo: 'a' } }] }), false);
+		assert.strictEqual(await check({ role: { $eq: 'admin' }, team: { '@in': ['a', 'b'] } }), true);
+	});
+
+	it('takes a selection with no keys, as before, which selects nothing', async () => {
+		assert.strictEqual(await check({}), true);
 	});
 });
 
@@ -287,8 +363,9 @@ describe('helpers.flattenedObject', () => {
 		}
 
 		const secondFlattenedObj = Helpers.flattenedObject(email);
-		const value = Filter.__getValueByPath(secondFlattenedObj, 'data.value.text');
-		assert.strictEqual(value.length, 2);
+		// Each item of an array has a key of its own, so both texts are there
+		const texts = Object.keys(secondFlattenedObj).filter((key) => key.replace(/\.\d+/g, '') === 'data.value.text');
+		assert.strictEqual(texts.length, 2);
 	});
 });
 

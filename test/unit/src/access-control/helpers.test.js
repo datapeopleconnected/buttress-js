@@ -17,310 +17,7 @@
 import { describe, it } from 'mocha';
 import assert from 'assert';
 
-import AccessControlHelpers from '../../../../dist/access-control/helpers.js';
-import { filterPolicyConfigs, CombineEnvGroups, findPatternOccurrences, patternExists, containsTokenLevelRef } from '../../../../dist/access-control/helpers.js';
-
-describe('access-control/helpers:evaluateOperation', () => {
-  describe('$eq / @eq', () => {
-    it('should return true for equal strings (case-insensitive)', () => {
-      assert.strictEqual(AccessControlHelpers.evaluateOperation('hello', 'HELLO', '$eq'), true);
-    });
-
-    it('should return true for equal strings with @eq', () => {
-      assert.strictEqual(AccessControlHelpers.evaluateOperation('hello', 'hello', '@eq'), true);
-    });
-
-    it('should return false for different strings', () => {
-      assert.strictEqual(AccessControlHelpers.evaluateOperation('hello', 'world', '$eq'), false);
-    });
-
-    it('should return true for equal numbers', () => {
-      assert.strictEqual(AccessControlHelpers.evaluateOperation(42, 42, '$eq'), true);
-    });
-
-    it('should return false for different numbers', () => {
-      assert.strictEqual(AccessControlHelpers.evaluateOperation(42, 43, '$eq'), false);
-    });
-
-    it('should return true when both sides are null with $eq', () => {
-      assert.strictEqual(AccessControlHelpers.evaluateOperation(null, null, '$eq'), true);
-    });
-
-    it('should return true when both sides are null with @eq', () => {
-      assert.strictEqual(AccessControlHelpers.evaluateOperation(null, null, '@eq'), true);
-    });
-
-    it('should return false when lhs is null and rhs is not', () => {
-      assert.strictEqual(AccessControlHelpers.evaluateOperation(null, 'value', '$eq'), false);
-    });
-
-    it('should return false when rhs is null and lhs is not', () => {
-      assert.strictEqual(AccessControlHelpers.evaluateOperation('value', null, '$eq'), false);
-    });
-  });
-
-  describe('$not / @not', () => {
-    it('should return true for different strings', () => {
-      assert.strictEqual(AccessControlHelpers.evaluateOperation('hello', 'world', '$not'), true);
-    });
-
-    it('should return false for equal strings (case-insensitive)', () => {
-      assert.strictEqual(AccessControlHelpers.evaluateOperation('hello', 'HELLO', '$not'), false);
-    });
-
-    it('should return true for different strings with @not', () => {
-      assert.strictEqual(AccessControlHelpers.evaluateOperation('hello', 'world', '@not'), true);
-    });
-
-    it('should return false when both are null', () => {
-      assert.strictEqual(AccessControlHelpers.evaluateOperation(null, null, '$not'), false);
-    });
-  });
-
-  describe('$gt / @gt', () => {
-    it('should return true when lhs > rhs for numbers', () => {
-      assert.strictEqual(AccessControlHelpers.evaluateOperation(10, 5, '$gt'), true);
-    });
-
-    it('should return false when lhs <= rhs for numbers', () => {
-      assert.strictEqual(AccessControlHelpers.evaluateOperation(3, 5, '$gt'), false);
-    });
-
-    it('should return false when equal', () => {
-      assert.strictEqual(AccessControlHelpers.evaluateOperation(5, 5, '$gt'), false);
-    });
-
-    it('should return true with @gt', () => {
-      assert.strictEqual(AccessControlHelpers.evaluateOperation(10, 5, '@gt'), true);
-    });
-  });
-
-  describe('$lt / @lt', () => {
-    it('should return true when lhs < rhs for numbers', () => {
-      assert.strictEqual(AccessControlHelpers.evaluateOperation(3, 5, '$lt'), true);
-    });
-
-    it('should return false when lhs >= rhs', () => {
-      assert.strictEqual(AccessControlHelpers.evaluateOperation(10, 5, '$lt'), false);
-    });
-
-    it('should return false when equal', () => {
-      assert.strictEqual(AccessControlHelpers.evaluateOperation(5, 5, '$lt'), false);
-    });
-
-    it('should return true with @lt', () => {
-      assert.strictEqual(AccessControlHelpers.evaluateOperation(3, 5, '@lt'), true);
-    });
-  });
-
-  describe('$gte / @gte', () => {
-    it('should return true when lhs > rhs', () => {
-      assert.strictEqual(AccessControlHelpers.evaluateOperation(10, 5, '$gte'), true);
-    });
-
-    it('should return true when lhs == rhs', () => {
-      assert.strictEqual(AccessControlHelpers.evaluateOperation(5, 5, '$gte'), true);
-    });
-
-    it('should return false when lhs < rhs', () => {
-      assert.strictEqual(AccessControlHelpers.evaluateOperation(3, 5, '$gte'), false);
-    });
-  });
-
-  describe('$lte / @lte', () => {
-    it('should return true when lhs < rhs', () => {
-      assert.strictEqual(AccessControlHelpers.evaluateOperation(3, 5, '$lte'), true);
-    });
-
-    it('should return true when lhs == rhs', () => {
-      assert.strictEqual(AccessControlHelpers.evaluateOperation(5, 5, '$lte'), true);
-    });
-
-    it('should return false when lhs > rhs', () => {
-      assert.strictEqual(AccessControlHelpers.evaluateOperation(10, 5, '$lte'), false);
-    });
-  });
-
-  describe('$gtDate / @gtDate', () => {
-    it('should return true when lhs date is after rhs date string', () => {
-      const result = AccessControlHelpers.evaluateOperation('2025-06-01', '2025-01-01', '$gtDate');
-      assert.strictEqual(result, true);
-    });
-
-    it('should return false when lhs date is before rhs date string', () => {
-      const result = AccessControlHelpers.evaluateOperation('2025-01-01', '2025-06-01', '$gtDate');
-      assert.strictEqual(result, false);
-    });
-
-    it('should return false when lhs is null', () => {
-      const result = AccessControlHelpers.evaluateOperation(null, '2025-01-01', '$gtDate');
-      assert.strictEqual(result, false);
-    });
-
-    it('should return false when lhs is undefined', () => {
-      const result = AccessControlHelpers.evaluateOperation(undefined, '2025-01-01', '$gtDate');
-      assert.strictEqual(result, false);
-    });
-
-    it('should return true with @gtDate', () => {
-      const result = AccessControlHelpers.evaluateOperation('2025-06-01', '2025-01-01', '@gtDate');
-      assert.strictEqual(result, true);
-    });
-  });
-
-  describe('$gteDate / @gteDate', () => {
-    it('should return true when lhs date is after rhs', () => {
-      const result = AccessControlHelpers.evaluateOperation('2025-06-01', '2025-01-01', '$gteDate');
-      assert.strictEqual(result, true);
-    });
-
-    it('should return true when lhs date equals rhs', () => {
-      const result = AccessControlHelpers.evaluateOperation('2025-06-01', '2025-06-01', '$gteDate');
-      assert.strictEqual(result, true);
-    });
-
-    it('should return false for null lhs', () => {
-      const result = AccessControlHelpers.evaluateOperation(null, '2025-06-01', '$gteDate');
-      assert.strictEqual(result, false);
-    });
-  });
-
-  describe('$ltDate / @ltDate', () => {
-    it('should return true when lhs date is before rhs', () => {
-      const result = AccessControlHelpers.evaluateOperation('2025-01-01', '2025-06-01', '$ltDate');
-      assert.strictEqual(result, true);
-    });
-
-    it('should return false when lhs date is after rhs', () => {
-      const result = AccessControlHelpers.evaluateOperation('2025-06-01', '2025-01-01', '$ltDate');
-      assert.strictEqual(result, false);
-    });
-  });
-
-  describe('$lteDate / @lteDate', () => {
-    it('should return true when lhs date is before rhs', () => {
-      const result = AccessControlHelpers.evaluateOperation('2025-01-01', '2025-06-01', '$lteDate');
-      assert.strictEqual(result, true);
-    });
-
-    it('should return true when lhs date equals rhs', () => {
-      const result = AccessControlHelpers.evaluateOperation('2025-06-01', '2025-06-01', '$lteDate');
-      assert.strictEqual(result, true);
-    });
-
-    it('should return false for null lhs', () => {
-      const result = AccessControlHelpers.evaluateOperation(null, '2025-06-01', '$lteDate');
-      assert.strictEqual(result, false);
-    });
-  });
-
-  describe('$rex / @rex', () => {
-    it('should return true for a matching regex pattern', () => {
-      const result = AccessControlHelpers.evaluateOperation('hello world', 'hello', '$rex');
-      assert.strictEqual(result, true);
-    });
-
-    it('should return false for a non-matching regex pattern', () => {
-      const result = AccessControlHelpers.evaluateOperation('hello world', 'goodbye', '$rex');
-      assert.strictEqual(result, false);
-    });
-
-    it('should be case-sensitive', () => {
-      const result = AccessControlHelpers.evaluateOperation('Hello World', 'hello', '$rex');
-      assert.strictEqual(result, false);
-    });
-
-    it('should return true with @rex', () => {
-      const result = AccessControlHelpers.evaluateOperation('hello world', 'hello', '@rex');
-      assert.strictEqual(result, true);
-    });
-  });
-
-  describe('$rexi / @rexi', () => {
-    it('should return true for case-insensitive match', () => {
-      const result = AccessControlHelpers.evaluateOperation('Hello World', 'hello', '$rexi');
-      assert.strictEqual(result, true);
-    });
-
-    it('should return false for non-matching pattern', () => {
-      const result = AccessControlHelpers.evaluateOperation('Hello World', 'goodbye', '$rexi');
-      assert.strictEqual(result, false);
-    });
-  });
-
-  describe('$in / @in', () => {
-    it('should return true when string value is in array', () => {
-      const result = AccessControlHelpers.evaluateOperation('hello', ['hello', 'world'], '$in');
-      assert.strictEqual(result, true);
-    });
-
-    it('should return false when string value is not in array', () => {
-      const result = AccessControlHelpers.evaluateOperation('goodbye', ['hello', 'world'], '$in');
-      assert.strictEqual(result, false);
-    });
-
-    it('should return true with @in', () => {
-      const result = AccessControlHelpers.evaluateOperation('hello', ['hello', 'world'], '@in');
-      assert.strictEqual(result, true);
-    });
-
-    it('should return true when array values are all present in rhs', () => {
-      const result = AccessControlHelpers.evaluateOperation(['a', 'b'], ['a', 'b', 'c'], '$in');
-      assert.strictEqual(result, true);
-    });
-
-    it('should return false when array has values not in rhs', () => {
-      const result = AccessControlHelpers.evaluateOperation(['a', 'd'], ['a', 'b', 'c'], '$in');
-      assert.strictEqual(result, false);
-    });
-  });
-
-  describe('$nin / @nin', () => {
-    it('should return true when string value is not in array', () => {
-      const result = AccessControlHelpers.evaluateOperation('hello', ['world', 'goodbye'], '$nin');
-      assert.strictEqual(result, true);
-    });
-
-    it('should return false when string value is in array', () => {
-      const result = AccessControlHelpers.evaluateOperation('hello', ['hello', 'world'], '$nin');
-      assert.strictEqual(result, false);
-    });
-
-    it('should return true with @nin', () => {
-      const result = AccessControlHelpers.evaluateOperation('hello', ['world', 'goodbye'], '@nin');
-      assert.strictEqual(result, true);
-    });
-
-    it('should return false when any array element is in rhs', () => {
-      const result = AccessControlHelpers.evaluateOperation(['d', 'a'], ['a', 'b', 'c'], '$nin');
-      assert.strictEqual(result, false);
-    });
-
-    it('should return true when no array elements are in rhs', () => {
-      const result = AccessControlHelpers.evaluateOperation(['d', 'e'], ['a', 'b', 'c'], '$nin');
-      assert.strictEqual(result, true);
-    });
-  });
-
-  describe('$exists / @exists', () => {
-    it('should return true when rhs is included in lhs string', () => {
-      const result = AccessControlHelpers.evaluateOperation('hello world', 'world', '$exists');
-      assert.strictEqual(result, true);
-    });
-
-    it('should return false when rhs is not included in lhs string', () => {
-      const result = AccessControlHelpers.evaluateOperation('hello world', 'goodbye', '$exists');
-      assert.strictEqual(result, false);
-    });
-  });
-
-  describe('unknown operator', () => {
-    it('should return false for an unknown operator', () => {
-      const result = AccessControlHelpers.evaluateOperation('hello', 'world', '$unknown');
-      assert.strictEqual(result, false);
-    });
-  });
-});
+import { filterPolicyConfigs, CombineEnvGroups } from '../../../../dist/access-control/helpers.js';
 
 describe('access-control/helpers:CombineEnvGroups', () => {
   it('should combine req env with policy env and config env', () => {
@@ -461,6 +158,29 @@ describe('access-control/helpers:filterPolicyConfigs', () => {
     assert.strictEqual(result.length, 0);
   });
 
+  // SR-DPC-001 S21: a data sharing agreement's config could be stored with text there, which matched by its substrings
+  it("should not return a config whose verbs or schema aren't lists", () => {
+    const policy = makePolicy([
+      { verbs: 'GET,PUT', schema: ['car'], query: {}, projection: null, condition: null },
+      { verbs: ['GET'], schema: 'cars-and-vans', query: {}, projection: null, condition: null },
+      { verbs: '%ALL%', schema: '%ALL%', query: {}, projection: null, condition: null },
+    ]);
+
+    for (const verb of ['GET', 'PUT']) {
+      for (const schema of ['car', 'cars', 'van', 'vans']) {
+        assert.deepStrictEqual(filterPolicyConfigs(policy, schema, verb, false), [], `${verb} ${schema}`);
+      }
+    }
+    assert.deepStrictEqual(filterPolicyConfigs(policy, 'car', 'POST', false, true), []);
+  });
+
+  it('should match the items of verbs and schema exactly', () => {
+    const policy = makePolicy([{ verbs: ['GET'], schema: ['cars-and-vans'], query: {}, projection: null, condition: null }]);
+
+    assert.strictEqual(filterPolicyConfigs(policy, 'cars-and-vans', 'GET', false).length, 1);
+    assert.strictEqual(filterPolicyConfigs(policy, 'car', 'GET', false).length, 0);
+  });
+
   it('should return multiple matching configs', () => {
     const policy = makePolicy([
       { verbs: ['GET'], schema: ['user'], query: {}, projection: null, condition: null },
@@ -470,6 +190,30 @@ describe('access-control/helpers:filterPolicyConfigs', () => {
 
     const result = filterPolicyConfigs(policy, 'user', 'GET', false);
     assert.strictEqual(result.length, 1);
+  });
+
+  describe('QUERY and its old name SEARCH', () => {
+    const configFor = (verbs) => makePolicy([{ verbs, schema: ['user'], query: {}, projection: null, condition: null }]);
+
+    for (const [granted, requested] of [
+      ['QUERY', 'QUERY'],
+      ['SEARCH', 'SEARCH'],
+      ['SEARCH', 'QUERY'],
+      ['QUERY', 'SEARCH'],
+    ]) {
+      it(`should let a config granting ${granted} match a ${requested} request`, () => {
+        assert.strictEqual(filterPolicyConfigs(configFor([granted]), 'user', requested, false).length, 1);
+      });
+    }
+
+    it('should not let QUERY grant GET or POST', () => {
+      assert.strictEqual(filterPolicyConfigs(configFor(['QUERY']), 'user', 'GET', false).length, 0);
+      assert.strictEqual(filterPolicyConfigs(configFor(['QUERY']), 'user', 'POST', false).length, 0);
+    });
+
+    it('should not let GET grant QUERY', () => {
+      assert.strictEqual(filterPolicyConfigs(configFor(['GET']), 'user', 'QUERY', false).length, 0);
+    });
   });
 
   describe('verbCheckReadability', () => {
@@ -491,6 +235,15 @@ describe('access-control/helpers:filterPolicyConfigs', () => {
       assert.strictEqual(result.length, 1);
     });
 
+    it('should return config when readability check matches QUERY', () => {
+      const policy = makePolicy([
+        { verbs: ['QUERY'], schema: ['user'], query: {}, projection: null, condition: null },
+      ]);
+
+      const result = filterPolicyConfigs(policy, 'user', 'DELETE', true, true);
+      assert.strictEqual(result.length, 1);
+    });
+
     it('should not return config when readability check fails', () => {
       const policy = makePolicy([
         { verbs: ['POST'], schema: ['user'], query: {}, projection: null, condition: null },
@@ -499,120 +252,5 @@ describe('access-control/helpers:filterPolicyConfigs', () => {
       const result = filterPolicyConfigs(policy, 'user', 'DELETE', true, true);
       assert.strictEqual(result.length, 0);
     });
-  });
-});
-
-describe('access-control/helpers:findPatternOccurrences', () => {
-  it('should find pattern in value strings', () => {
-    const obj = { name: '#env.user.id' };
-    const result = findPatternOccurrences(obj, '#env\\.');
-    assert.strictEqual(result.length, 1);
-    assert.strictEqual(result[0].type, 'value');
-    assert.strictEqual(result[0].value, '#env.user.id');
-  });
-
-  it('should find pattern in keys', () => {
-    const obj = { '#env.user.id': 'value' };
-    const result = findPatternOccurrences(obj, '#env\\.');
-    assert.strictEqual(result.length, 1);
-    assert.strictEqual(result[0].type, 'key');
-  });
-
-  it('should find nested pattern occurrences', () => {
-    const obj = { query: { userId: '#env.user.id' } };
-    const result = findPatternOccurrences(obj, '#env\\.');
-    assert.strictEqual(result.length, 1);
-    assert.deepStrictEqual(result[0].path, ['query', 'userId']);
-  });
-
-  it('should find occurrences in arrays', () => {
-    const obj = { rules: ['#env.role', '#env.location'] };
-    const result = findPatternOccurrences(obj, '#env\\.');
-    assert.strictEqual(result.length, 2);
-  });
-
-  it('should return empty array when no pattern matches', () => {
-    const obj = { name: 'hello' };
-    const result = findPatternOccurrences(obj, '#env\\.');
-    assert.strictEqual(result.length, 0);
-  });
-
-  it('should handle nested objects', () => {
-    const obj = { a: { b: { c: '#env.deeply.nested' } } };
-    const result = findPatternOccurrences(obj, '#env\\.');
-    assert.strictEqual(result.length, 1);
-    assert.deepStrictEqual(result[0].path, ['a', 'b', 'c']);
-  });
-});
-
-describe('access-control/helpers:patternExists', () => {
-  it('should return true when pattern exists in value', () => {
-    const obj = { userId: '#env.user.id' };
-    assert.strictEqual(patternExists(obj, '#env\\.'), true);
-  });
-
-  it('should return true when pattern exists in key', () => {
-    const obj = { '#env.role': 'admin' };
-    assert.strictEqual(patternExists(obj, '#env\\.'), true);
-  });
-
-  it('should return true for deeply nested pattern', () => {
-    const obj = { a: { b: { c: '#env.deep' } } };
-    assert.strictEqual(patternExists(obj, '#env\\.'), true);
-  });
-
-  it('should return false when pattern does not exist', () => {
-    const obj = { name: 'hello' };
-    assert.strictEqual(patternExists(obj, '#env\\.'), false);
-  });
-
-  it('should return true when pattern exists in array', () => {
-    const obj = { list: ['#env.item1', 'plain'] };
-    assert.strictEqual(patternExists(obj, '#env\\.'), true);
-  });
-});
-
-describe('access-control/helpers:containsTokenLevelRef', () => {
-  it('should return all false when no user token refs exist', () => {
-    const policy = {
-      id: 'p1',
-      name: 'test',
-      appId: 'app1',
-      env: null,
-      config: {
-        env: null,
-        query: { userId: '#env.date' },
-        condition: { date: { '@gt': '#env.date.now' } },
-        verbs: ['GET'],
-        schema: ['user'],
-        projection: null,
-      },
-    };
-
-    const result = containsTokenLevelRef(policy);
-    assert.strictEqual(result.env, false);
-    assert.strictEqual(result.configEnv, false);
-    assert.strictEqual(result.query, false);
-    assert.strictEqual(result.condition, false);
-  });
-
-  it('should detect user token ref in query', () => {
-    const policy = {
-      id: 'p1',
-      name: 'test',
-      appId: 'app1',
-      env: null,
-      config: {
-        env: null,
-        query: { userId: '#env.user.id' },
-        condition: null,
-        verbs: ['GET'],
-        schema: ['user'],
-        projection: null,
-      },
-    };
-
-    const result = containsTokenLevelRef(policy);
-    assert.strictEqual(result.query, true);
   });
 });

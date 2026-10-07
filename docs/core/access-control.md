@@ -26,10 +26,10 @@ Policies get evaluated in two different places, for two different questions, and
    policies against the mutated entity for each connected token. See [Architecture](architecture.md) for
    where this sits in the write → realtime-update pipeline.
 
-A policy that grants a token read access over REST doesn't automatically mean that token's socket gets
-notified of changes — that's a separate (coarser) evaluation, keyed off the same policy documents but run
-independently. If REST access works but realtime updates don't show up, look at the SPR pipeline, not the
-REST policy.
+Both decide the same way: a token's socket is told about a change to an entity when its policies would let a REST
+read reach that entity, with the properties they'd let it read. The SPR decides it separately, after the write,
+for the tokens the policy cache has as connected; so if REST access works but realtime updates don't show up, look at
+the SPR pipeline and the cache, not the policy.
 
 ## REST evaluation flow
 
@@ -37,11 +37,15 @@ REST policy.
 2. The token's applicable policies are resolved (from the policy cache) and sorted by `priority`.
 3. Each policy's `config` entries are narrowed to ones matching the request's verb + schema.
 4. Any `condition` blocks are evaluated against the request; policies that fail drop out.
-5. Remaining `query` blocks resolve into a concrete datastore query fragment.
-6. `projection` blocks resolve into field-level restrictions; if resolving projections leaves no applicable
-   policy, the request is denied.
-7. Surviving policy configs are merged where possible (same verbs/schema/query → merge projections; same
-   verbs/schema/no-projection → OR the queries together) and handed to the route handler.
+5. Remaining `query` blocks resolve into a concrete datastore query fragment, their `#env.` values read from the
+   request. A config whose query can't be applied (an `#env.` value that isn't set, an operator Buttress doesn't
+   know, or a query the schema can't read) drops out, and the token's other configs still apply.
+6. `projection` blocks resolve into field-level restrictions: a read may only query or sort by the properties a
+   projection lets through; if resolving projections leaves no applicable policy, the request is denied.
+7. Surviving configs are merged where that doesn't change what they give together (the same query reads every
+   property either config does; configs that read every property have their queries OR'd together) and handed to
+   the route handler, which reads the rest in one query per data source: each entity comes once, with the
+   properties of each config whose query reads it.
 
 ## Policy Cache
 
@@ -81,5 +85,6 @@ every origin it's used from (`POST /api/v1/user/:id/token`).
 - Scope policy selectors to explicit roles/capabilities rather than broad matches.
 - Keep wildcard access (`%FULL_ACCESS%`, `%ALL%`) for admin-only policies, and keep those policies few and
   auditable.
-- A policy can carry a `limit` (expiry date) — Buttress automatically strips the matching policy properties
-  from the token and removes the policy once it expires.
+- A policy can carry a `limit` (expiry date): it grants nothing once the limit passes, and Buttress then removes it,
+  along with the property a transient policy (`transient: true`) selects its tokens by. See
+  [Policy](../applications/policy.md#limit).

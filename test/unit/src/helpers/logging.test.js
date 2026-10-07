@@ -16,6 +16,8 @@
 
 import { describe, it } from 'mocha';
 import assert from 'assert';
+import { Writable } from 'node:stream';
+import winston from 'winston';
 
 import Logging from '../../../../dist/helpers/logging.js';
 
@@ -139,6 +141,45 @@ describe('helpers/logging:captureOutput', () => {
     Logging.log('should be cleared');
     Logging.clean();
     Logging.flush();
+  });
+});
+
+// Through a logger of its own, which writes what it's given to `written`
+describe('helpers/logging:flush', () => {
+  const createLogging = () => {
+    const logging = Logging.newInstance();
+    logging.init('TEST');
+    const written = [];
+    const stream = new Writable({
+      write(chunk, encoding, done) {
+        written.push(String(chunk));
+        done();
+      },
+    });
+    logging.logger.clear().add(new winston.transports.Stream({ stream }));
+    logging.captureOutput(true);
+    return { logging, written };
+  };
+  // The logger writes on to its transports asynchronously
+  const settled = () => new Promise((resolve) => setImmediate(resolve));
+  // A line written is coloured, so the level is read with its colour codes taken out
+  const levelsAndMessages = (written) =>
+    written.map((line) => line.replace(/\u001b\[\d+m/g, '').match(/ (\w+): (.*)$/m).slice(1, 3));
+
+  it('flushes the captured lines again, as they were, after flushing them once', async () => {
+    const { logging, written } = createLogging();
+    logging.log('one');
+    logging.logWarn('two');
+
+    logging.flush();
+    logging.flush();
+    await settled();
+
+    const lines = [
+      ['info', 'one'],
+      ['warn', 'two'],
+    ];
+    assert.deepStrictEqual(levelsAndMessages(written), [...lines, ...lines]);
   });
 });
 

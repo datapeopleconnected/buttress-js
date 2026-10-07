@@ -10,7 +10,7 @@ process types** from the same source tree. Which one you get depends only on whi
 | REST | `bin/app.sh` | [src/bin/app.ts](../src/bin/app.ts) | [BootstrapRest](../src/bootstrap-rest.ts) | HTTP API: core routes + generated per-app schema CRUD routes |
 | Socket | `bin/app-socket.sh` | [src/bin/app-socket.ts](../src/bin/app-socket.ts) | [BootstrapSocket](../src/bootstrap-socket.ts) | Socket.IO realtime delivery, data-sharing sockets |
 | Lambda | `bin/app-lambda.sh` | [src/bin/app-lambda.ts](../src/bin/app-lambda.ts) | [BootstrapLambda](../src/bootstrap-lambda.ts) | Runs `LambdaManager` (primary) + `LambdaRunner` workers |
-| SPR (Socket Policy Router) | `bin/app-spr.sh` | [src/bin/app-spr.ts](../src/bin/app-spr.ts) | [BootstrapSocketPolicyRouter](../src/bootstrap-spr.ts) | Consumes REST activity, evaluates policies per connected token, decides what to broadcast |
+| SPR (Socket Policy Router) | `bin/app-spr.sh` | [src/bin/app-spr.ts](../src/bin/app-spr.ts) | [BootstrapSocketPolicyRouter](../src/bootstrap-spr.ts) | Consumes REST activity, evaluates policies per connected token, decides what to broadcast; its primary also removes policies past their `limit` ([PolicyExpiry](../src/access-control/policy-expiry.ts)) |
 
 `bin/buttress.sh` starts all four. There is no "monolith" mode — REST, Socket, Lambda and SPR are always
 separate OS processes, even in local/dev, and they only talk to each other over **Redis** (NRP pub/sub,
@@ -65,7 +65,7 @@ what a given process actually does on startup.
 
 Bootstrap classes populate `this.__services` (a `Map<string, unknown>`) and pass it down to `Model`,
 `Routes`, `Route`, and model instances. Common keys: `nrp` (NodeRedisPubsub), `redisClient`,
-`policyCache` (`PolicyCache`), `modelManager` (the singleton `Model`), `sdsRouting` (REST and SPR). This is
+`policyCache` (`PolicyCache`), `modelManager` (the singleton `Model`). This is
 the only dependency-injection mechanism in the codebase — there's no DI container.
 
 ## Data flow (REST write → realtime delivery)
@@ -120,19 +120,30 @@ plugin registry in this repo, only the loader. Only the REST process loads plugi
 
 ## Federation / data sharing
 
-Two independent mechanisms, both keyed off `AppDataSharingSchemaModel` ("DSA" — data sharing agreement):
+Two independent mechanisms, both keyed off `AppDataSharingSchemaModel` ("DSA" — data sharing agreement). What the
+partner may do is the DSA's policy, made from its `policyConfig` when it's added (selecting the DSA's `dataSharing`
+token) and recorded as its `_policyId`; `PUT app-data-sharing/:id/policy` replaces that policy's configs through
+`PolicySchemaModel.updateByPath`, which recaches it and reselects its tokens, as any policy update does.
 
 - **Datastore-level**: a schema's `remotes` field points a `RemoteCombinedModel`
   ([src/model/type/remote-combined.ts](../src/model/type/remote-combined.ts)) at a remote Buttress
   instance via a `butt://`/`butts://` connection string
   ([src/datastore/adapters/buttress.ts](../src/datastore/adapters/buttress.ts)), built from the DSA's
   `remoteApp` details (`Helpers.DataSharing.createDataSharingConnectionString`). Reads go to the local
-  model and every remote, merged by `SortedStreams`. A partner's record carries its `sourceId` (the app it
-  came from), and a write to it names it (`PUT <schema>/:sourceId/:id`; the delete routes take the
-  found records'). A delete of every record also goes through each DSA, for the partner's policy to
-  scope. Which DSA reaches a source is learnt from reads by `SourceDataSharingRouting`
-  ([src/services/source-ds-routing.ts](../src/services/source-ds-routing.ts)) and kept in Redis
-  (`sds-route:<appId>-<sourceId>` under `Config.redis.scope`), so every process and the next start share it.
+  model and every remote, merged by `SortedStreams`, and the model notes which DSA each record came through as it
+  arrives (`sourceOf`, kept by the record object, so it's never returned). A partner's record carries its
+  `sourceId` (the app it came from), but the partner gives that, so a write never goes by it (D-20): the
+  update and delete routes read the record within the caller's policies across every source, and write through
+  the DSA it was read through (`pickWriteTarget`,
+  [src/routes/schema-routes/write-target.ts](../src/routes/schema-routes/write-target.ts)). When more than one
+  source has the id (one entity's parts), `PUT <schema>/:sourceId/:id` picks one by the source it names, or else
+  it's the app's own; with neither it's a 409 `ambiguous_source`. The write's activity carries the DSA
+  (`dataShareId`, a bulk update's `dataShareIds`), for the SPR to find the record there. A delete of every record
+  also goes through each DSA, for the partner's policy to scope. A create has nothing to read first, so it goes
+  by the source it names: to the DSA whose `remoteApp.appId` is that app (`_createTarget`). Activation records each
+  side's app on the other's DSA (the consumer sends `?appId=` and the partner answers with its own), and a model
+  whose DSA was paired before that asks the partner when it connects (`GET app-data-sharing/identity`) and records
+  the answer. A bulk add routes each item, a source at a time, in request order. Nothing is learnt from reads.
   A partner that can't be reached when the model is built is left out of its sources, and tried again on a new
   connection (1 s doubling to 60 s) until it is. Meanwhile reads give the rest, a write to its records is a 503, and
   `GET app/schema` gives the collection without the partner's properties. The consumer is a live proxy: it

@@ -18,9 +18,11 @@ import { Readable } from 'node:stream';
 
 import ObjectIdHelper from '../dist/datastore/adapters/object-id.js';
 import StandardModel from '../dist/model/type/standard.js';
+import RemoteCombinedModel from '../dist/model/type/remote-combined.js';
+import { toMongoQuery } from '../dist/access-control/operators.js';
 
-// Evaluates a query as StandardModel.parseQuery leaves it, in MongoDB's language. An operator it doesn't know throws,
-// so a test never passes against a query nothing understood.
+// Evaluates a query in MongoDB's language, as the MongoDB adapter gives one (toMongoQuery of what StandardModel.parseQuery
+// leaves). An operator it doesn't know throws, so a test never passes against a query nothing understood.
 const compare = (value, operand) => (value === operand ? 0 : value > operand ? 1 : -1);
 const same = (value, operand) => String(value) === String(operand);
 const OPERATORS = {
@@ -101,8 +103,10 @@ export function createSchemaModel(schema, rows = []) {
     record(call, ...args) {
       this.calls.push([call, ...args]);
     },
+    // A Buttress query, which the datastore reads in MongoDB's terms, as the MongoDB adapter does
     select(query) {
-      return this.rows.filter((row) => matches(row, query));
+      const mongoQuery = toMongoQuery(query ?? {});
+      return this.rows.filter((row) => matches(row, mongoQuery));
     },
     find(query, excludes, limit = 0, skip = 0, sort = null, project = null) {
       this.record('find', query);
@@ -174,7 +178,8 @@ export function createSchemaModel(schema, rows = []) {
     },
     async rmAll(query) {
       this.record('rmAll', query);
-      this.removeWhere((row) => matches(row, query));
+      const mongoQuery = toMongoQuery(query ?? {});
+      this.removeWhere((row) => matches(row, mongoQuery));
     },
   };
   model.adapter = datastore;
@@ -184,3 +189,36 @@ export function createSchemaModel(schema, rows = []) {
 
 // An id for a test row
 export const newId = () => ObjectIdHelper.new();
+
+// The app a federated schema model's collection belongs to
+export const FEDERATED_APP_ID = ObjectIdHelper.new();
+
+/**
+ * A real collection with remotes (RemoteCombinedModel) over datastores in memory: the app's own rows, and each
+ * partner's, read through an agreement.
+ * @param {object} schema - the collection's schema, as for createSchemaModel
+ * @param {object[]} ownRows - the app's own rows
+ * @param {object} partners - each agreement's id, and the rows its partner holds
+ * @param {object} [partnerAppIds] - each agreement's id, and the partner app it records (none if not known)
+ * @return {{ model: RemoteCombinedModel, datastores: object }} - the datastores by agreement, `local` for the app's own
+ */
+export function createFederatedSchemaModel(schema, ownRows, partners, partnerAppIds = {}) {
+  const services = new Map([
+    ['nrp', { on: async () => () => {}, emit: () => {} }],
+    ['modelManager', {}],
+  ]);
+  const local = createSchemaModel(schema, ownRows);
+  const model = new RemoteCombinedModel(local.model.schemaData, { id: FEDERATED_APP_ID }, services);
+  model._localModel = local.model;
+
+  const datastores = { local: local.datastore };
+  model._remoteModels = Object.entries(partners).map(([dataSharingId, rows]) => {
+    const partner = createSchemaModel(schema, rows);
+    partner.model.dataSharingId = dataSharingId;
+    datastores[dataSharingId] = partner.datastore;
+    return partner.model;
+  });
+  model._partnerAppIds = new Map(Object.keys(partners).map((dataSharingId) => [dataSharingId, partnerAppIds[dataSharingId] ?? null]));
+
+  return { model, datastores };
+}

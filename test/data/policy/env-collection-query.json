@@ -12,7 +12,7 @@
   },
   "config": [
     {
-      "verbs": ["GET", "SEARCH"],
+      "verbs": ["GET", "QUERY"],
       "schema": ["board"],
       "query": {
         "subscribed": {
@@ -21,7 +21,7 @@
       }
     },
     {
-      "verbs": ["GET", "SEARCH"],
+      "verbs": ["GET", "QUERY"],
       "schema": ["post"],
       "env": {
         "boardIds": {

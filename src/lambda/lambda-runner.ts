@@ -68,8 +68,8 @@ import Model from '../model/index.js';
 import * as Helpers from '../helpers/index.js';
 import * as Git from '../helpers/git.js';
 import lambdaHelpers, { CALLER_TOKEN_PLACEHOLDER } from '../lambda-helpers/helpers.js';
-import type { LambdaResult } from '../lambda-helpers/helpers.js';
-import IsolateBridge, { type IsolateJail } from '../lambda-helpers/isolate-bridge.js';
+import type { IsolateJail } from '../lambda-helpers/isolate-bridge.js';
+import LambdaRun, { type LambdaExecutionLog } from '../lambda-helpers/lambda-run.js';
 import { ExecPriority, LambdaExecutionMessage } from './lambda-manager.js';
 import LambdaSchemaModel, { Lambda } from '../model/core/lambda.js';
 import LambdaExecutionSchemaModel, { LambdaExecution, LambdaExecutionAddBody } from '../model/core/lambda-execution.js';
@@ -362,13 +362,6 @@ export default class LambdaRunner {
 
     // The app's own context, apart from other apps' lambdas
     this._useAppContext(String(app.id));
-    IsolateBridge.startExecutionLogs();
-    // Reset lambdaHelpers lambdaResult
-    lambdaHelpers.lambdaResult = null;
-    // Host functions act for this lambda: metadata updates go to it, email templates come from its code folder
-    lambdaHelpers.lambdaId = lambda.id.toString();
-    lambdaHelpers.lambdaGitHash = lambda.git.hash;
-    lambdaHelpers.caller = null;
 
     const reqBody: unknown = data.body ? JSON.parse(data.body) : {};
     const reqQuery = (data.query ? JSON.parse(data.query) : {}) as Record<string, unknown>;
@@ -420,16 +413,15 @@ export default class LambdaRunner {
       }
     }
 
+    const caller = await this._executionCaller(execution);
     const apiPath = app.apiPath;
     // const appAllowList = app.allowList;
     const trigger = this._executionTrigger(lambda, execution, type);
     const buttressUrl = `${Config.app.protocol}://${Config.app.host}`;
-    if (callerToken) lambdaHelpers.caller = { token: callerToken, origin: new URL(buttressUrl).origin };
     const buttressOptions = {
       buttressUrl,
       appToken: callerToken ? CALLER_TOKEN_PLACEHOLDER : executionToken.value,
       apiPath: apiPath,
-      allowUnauthorized: true,
     };
     const lambdaModules: Record<string, string> = {};
 
@@ -443,6 +435,15 @@ export default class LambdaRunner {
     // TODO: Handle case where repo code hash doesn't match lambda. (Update Repo)
 
     // const modulesNames = await this.installLambdaPackages(lambda, appAllowList); // not install packages on lambdas anymore
+
+    // What the host functions the lambda calls act for, until it has finished: metadata updates go to it, email templates
+    // come from its code folder, and its calls to this instance with the placeholder token are made as its caller
+    const run = LambdaRun.start(this._context, {
+      lambdaId: lambda.id.toString(),
+      lambdaGitHash: lambda.git.hash,
+      caller: callerToken ? { token: callerToken, origin: new URL(buttressUrl).origin } : null,
+    });
+
     // Inside the try so a lambda that fails to bundle or load is reported back to an API caller
     // waiting on its result, like one that throws while running.
     try {
@@ -468,6 +469,9 @@ export default class LambdaRunner {
           metadata: lambda.metadata,
           lambdaToken: lambdaToken.value,
           userId: executionUserId,
+          // Who called the lambda: the owner of the token its endpoint was called with, null without one
+          callerType: caller?.type ?? null,
+          callerId: caller?.id ?? null,
           appApiPath: apiPath,
           fileName: ownCode?.name,
           entryPoint: lambda.git.entryPoint,
@@ -520,16 +524,30 @@ export default class LambdaRunner {
 					lambda.req.body = lambdaData;
 					lambda.req.query = lambdaQuery;
 					lambda.req.headers = lambdaRequestHeaders;
-					await lambdaCode[lambdaInfo.entryPoint]();
+					try {
+						await lambdaCode[lambdaInfo.entryPoint]();
+					} catch (err) {
+						// Only an error's message crosses the isolate, so what else it was thrown with goes over as the result
+						if (err instanceof Error) {
+							const details = {};
+							if (typeof err.code === 'string') details.code = err.code;
+							if (Number.isInteger(err.httpStatus) && err.httpStatus >= 400 && err.httpStatus <= 599) {
+								details.httpStatus = err.httpStatus;
+							}
+							if (typeof err.retryable === 'boolean') details.retryable = err.retryable;
+							if (Object.keys(details).length > 0) lambda.setResult({ err: true, errMessage: err.message, ...details });
+						}
+						throw err;
+					}
 				})();
 			`);
       await this._runLambdaScript(hostile);
       // Maybe dispose isolate after executin the lambda?
 
-      await this._updateDBLambdaFinishExecution(execution);
+      await this._updateDBLambdaFinishExecution(execution, run.takeLogs());
 
       if (type === 'API_ENDPOINT') {
-        const lambdaResult = lambdaHelpers.lambdaResult as LambdaResult | null;
+        const lambdaResult = run.result;
 
         if (lambdaResult && lambdaResult.err) {
           throw Object.assign(new Error(lambdaResult.errMessage), {
@@ -567,10 +585,17 @@ export default class LambdaRunner {
         `Failed to execute script for lambda:${lambda.name} - ${Helpers.getThrownErrorMessage(err)}`,
       );
       // Before the API caller is answered, so the execution is errored by the time they look
-      await this._recordExecutionError(execution, failure.message);
+      await this._recordExecutionError(execution, failure.message, run.takeLogs());
 
       if (type === 'API_ENDPOINT') {
-        const errDetails = Helpers.getThrownErrorDetails(err);
+        const caught = Helpers.getThrownErrorDetails(err);
+        const thrown = run.result?.err ? Helpers.getThrownErrorDetails(run.result) : undefined;
+        const errDetails = {
+          ...caught,
+          code: caught.code ?? thrown?.code,
+          httpStatus: caught.httpStatus ?? thrown?.httpStatus,
+          retryable: caught.retryable ?? thrown?.retryable,
+        };
         const errMessage = errDetails.message;
 
         if (data.reqId) {
@@ -592,7 +617,27 @@ export default class LambdaRunner {
       }
 
       return Promise.reject(failure);
+    } finally {
+      // Cancels what the lambda left running, which can't act for the lambda that runs next
+      run.end();
     }
+  }
+
+  /**
+   * Who called an execution's lambda: the owner of the token it was called with, which its type says: a user, a lambda or
+   * an app. None for an execution without a caller's token, one whose token has gone since, or a type with no owner here.
+   */
+  async _executionCaller(execution: LambdaExecution): Promise<{ type: 'user' | 'lambda' | 'app'; id: string } | null> {
+    if (!execution._callerTokenId) return null;
+
+    const token = (await Model.getCoreModel(TokenSchemaModel).findById(execution._callerTokenId)) as Token | null;
+    if (!token) return null;
+
+    const { USER, LAMBDA, APP } = TokenSchemaModel.Constants.Type;
+    if (token.type === USER && token._userId) return { type: 'user', id: String(token._userId) };
+    if (token.type === LAMBDA && token._lambdaId) return { type: 'lambda', id: String(token._lambdaId) };
+    if (token.type === APP && token._appId) return { type: 'app', id: String(token._appId) };
+    return null;
   }
 
   /**
@@ -772,7 +817,7 @@ export default class LambdaRunner {
     // }
   }
 
-  async _updateDBLambdaFinishExecution(execution: LambdaExecution) {
+  async _updateDBLambdaFinishExecution(execution: LambdaExecution, logs: LambdaExecutionLog[]) {
     execution = await Model.getCoreModel(LambdaExecutionSchemaModel).findById(execution.id);
     await Model.getCoreModel(LambdaExecutionSchemaModel).updateById(
       Model.getCoreModel(LambdaExecutionSchemaModel).createId(execution.id),
@@ -782,7 +827,7 @@ export default class LambdaRunner {
           endedAt: Sugar.Date.create('now'),
         },
         $push: {
-          logs: { $each: IsolateBridge.takeExecutionLogs() },
+          logs: { $each: logs },
         },
       },
     );
@@ -822,12 +867,12 @@ export default class LambdaRunner {
   }
 
   /**
-   * Records the execution as errored, with why. A failure to record it is logged rather than thrown, so the manager and
-   * any API caller waiting on the execution are still told.
+   * Records the execution as errored, with why after what its lambda logged. A failure to record it is logged rather than
+   * thrown, so the manager and any API caller waiting on the execution are still told.
    */
-  async _recordExecutionError(execution: LambdaExecution, message: string) {
+  async _recordExecutionError(execution: LambdaExecution, message: string, logs: LambdaExecutionLog[] = []) {
     try {
-      await this._updateDBLambdaErrorExecution(execution, { message, type: 'ERROR' });
+      await this._updateDBLambdaErrorExecution(execution, { message, type: 'ERROR' }, logs);
     } catch (err: unknown) {
       Logging.logError(
         `[${this.name}] Failed to record execution ${execution.id} as errored: ${Helpers.getThrownErrorMessage(err)}`,
@@ -835,7 +880,11 @@ export default class LambdaRunner {
     }
   }
 
-  async _updateDBLambdaErrorExecution(execution: LambdaExecution, log: { message: string; type: string }) {
+  async _updateDBLambdaErrorExecution(
+    execution: LambdaExecution,
+    log: { message: string; type: string },
+    logs: LambdaExecutionLog[] = [],
+  ) {
     await Model.getCoreModel(LambdaExecutionSchemaModel).updateById(
       Model.getCoreModel(LambdaExecutionSchemaModel).createId(execution.id),
       {
@@ -844,7 +893,7 @@ export default class LambdaRunner {
           endedAt: Sugar.Date.create('now'),
         },
         $push: {
-          logs: { $each: [...IsolateBridge.takeExecutionLogs(), { log: log.message, type: log.type }] },
+          logs: { $each: [...logs, { log: log.message, type: log.type }] },
         },
       },
     );

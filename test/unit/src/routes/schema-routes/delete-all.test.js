@@ -20,7 +20,7 @@ import sinon from 'sinon';
 
 import Route from '../../../../../dist/routes/route.js';
 import DeleteAll from '../../../../../dist/routes/schema-routes/delete-all.js';
-import { createSchemaModel, newId } from '../../../../schema-model.js';
+import { createFederatedSchemaModel, createSchemaModel, newId } from '../../../../schema-model.js';
 
 // A real schema model, so the route and access control run the real parseQuery, over rows in memory
 const schema = {
@@ -43,6 +43,8 @@ function createFakeModel(docs) {
 function createRoute(model) {
   const route = Object.create(DeleteAll.prototype);
   route.schemaName = 'test-schema';
+  // The test schema has no private properties, as the constructor would find
+  route._privatePaths = [];
   route.routeModel = async () => model;
   return route;
 }
@@ -228,5 +230,20 @@ describe('schema-routes/DeleteAll:_respond/_broadcast', () => {
 
       assert.deepStrictEqual(activities().map((a) => [a.response.length, a.deletedEntities]), [[1000, undefined], [500, undefined]]);
     });
+  });
+});
+
+describe('schema-routes/DeleteAll: a collection with remotes', () => {
+  // The app's own part of a note and a partner's part, under one id, as the parts of one entity are
+  it('deletes each record in scope from where it was read, parts with the same id too', async () => {
+    const own = [{ id: NOTE_1, owner: 'alice' }, { id: NOTE_2, owner: 'bob' }];
+    const partner = [{ id: NOTE_1, sourceId: 'app-a', owner: 'alice' }];
+    const { model } = createFederatedSchemaModel(schema, own, { 'agreement-1': partner });
+    const route = createRoute(model);
+
+    const { result } = await deleteAll(route, [{ query: { owner: 'alice' } }]);
+
+    assert.deepStrictEqual([own.map((row) => row.id), partner], [[NOTE_2], []]);
+    assert.deepStrictEqual(result, [NOTE_1]);
   });
 });

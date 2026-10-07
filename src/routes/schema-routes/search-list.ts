@@ -36,7 +36,7 @@ export default class SearchList extends Route {
 
     super(`${schemaRoutePath}`, `SEARCH ${schema.name} LIST`, services, schema, app);
     this.__configureSchemaRoute();
-    this.verb = Route.Constants.Verbs.SEARCH;
+    this.verb = Route.Constants.Verbs.QUERY;
     this.permissions = Route.Constants.Permissions.LIST;
 
     this.activityDescription = `SEARCH ${schema.name} LIST`;
@@ -51,15 +51,10 @@ export default class SearchList extends Route {
 
     const result: QueryParams<object> = {
       query: {},
-      // parseInt takes numbers too, it converts them to a string first
-      skip: req.body && req.body.skip ? parseInt(req.body.skip as string) : 0,
-      limit: req.body && req.body.limit ? parseInt(req.body.limit as string) : 0,
+      ...Helpers.searchPaging(req.body),
       sort: req.body && req.body.sort ? req.body.sort : {},
       project: req.body && req.body.project ? req.body.project : false,
     };
-
-    if (isNaN(result.skip ?? 0)) throw Helpers.Errors.badRequest('invalid_value_skip');
-    if (isNaN(result.limit ?? 0)) throw Helpers.Errors.badRequest('invalid_value_limit');
 
     let query: BjsQuery<object> = {};
 

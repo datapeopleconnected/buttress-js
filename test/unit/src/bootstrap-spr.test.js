@@ -24,6 +24,25 @@ import Model from '../../../dist/model/index.js';
 import TokenSchemaModel from '../../../dist/model/core/token.js';
 import UserSchemaModel from '../../../dist/model/core/user.js';
 import RemoteCombinedModel from '../../../dist/model/type/remote-combined.js';
+import AccessControlFilter from '../../../dist/access-control/filter.js';
+import { realQueryParser } from '../../query-parser.js';
+import Logging from '../../../dist/helpers/logging.js';
+
+// An app's cars, which a policy's query is read against as REST reads it, through parseQuery
+const carModel = realQueryParser({ Schema: { name: 'car', type: 'collection', properties: {} } });
+
+// The policy cache's look at the connected tokens of several policies, from a fake's look at one policy's
+const withConnections = (policyCache) => ({
+  ...policyCache,
+  getConnectedTokenIdsByPolicyIds: async (policyIds) =>
+    new Map(
+      await Promise.all(policyIds.map(async (policyId) => [policyId, await policyCache.getConnectedTokenIdsByPolicyId(policyId)])),
+    ),
+});
+
+// A fake core model's find: by a list of ids, as the SPR reads the tokens and users a policy refers to, or by type
+const findDocs = (docs, query) =>
+  docs.filter((doc) => (query._id?.$in ? query._id.$in.some((id) => doc.id.equals(id)) : doc.type === query.type));
 
 describe('bootstrap-spr:class', () => {
 	it(`should create an instance of the BootstrapSocketPolicyRouter class`, () => {
@@ -78,8 +97,9 @@ describe('bootstrap-spr:_handleIncomingMessage bulk activity', () => {
 	};
 
 	const findIn = (docs) => ({
+		...carModel,
 		createId: (id) => new ObjectId(id),
-		find: async (query) => docs.filter((doc) => doc.type === query.type),
+		find: async (query) => findDocs(docs, query),
 		findOne: async (query) => docs.find((doc) => doc.id.equals(query._id)) || null,
 		// Like MongodbAdapter.findById, this resolves to null when there's no such document.
 		findById: async (id) => docs.find((d) => d.id.toString() === id.toString()) ?? null,
@@ -99,10 +119,10 @@ describe('bootstrap-spr:_handleIncomingMessage bulk activity', () => {
 
 		const emitted = [];
 		spr.__nrp = { emit: (event, json) => emitted.push({ event, ...JSON.parse(json) }) };
-		spr._policyCache = {
+		spr._policyCache = withConnections({
 			getPoliciesByRestActivity: async () => policies,
 			getConnectedTokenIdsByPolicyId: async (policyId) => (connections[policyId] || []).map((t) => t.id.toString()),
-		};
+		});
 
 		sinon.stub(Model, 'getAppModel').resolves(findIn(storedCars));
 		sinon.stub(Model, 'getCoreModel').callsFake((modelClass) => {
@@ -179,6 +199,25 @@ describe('bootstrap-spr:_handleIncomingMessage bulk activity', () => {
 		assert.strictEqual(first.clientSessionId, CLIENT_SESSION_ID);
 		assert.strictEqual(first.schemaName, 'car');
 		assert.strictEqual(first.appAPIPath, 'test-app');
+	});
+
+	// A policy's query reads an entity in realtime as a REST read would (D-31), a bare value included
+	it('relays the entities a query of bare values reads, as a REST read would', async () => {
+		const byName = {
+			id: 'policy-by-name',
+			name: 'by-name',
+			_appId: APP_ID,
+			env: null,
+			config: [{ verbs: ['GET'], schema: ['car'], query: { name: 'owned' } }],
+		};
+		const { spr, received } = createSPR({ policies: [byName], connections: { [byName.id]: [tokens.fullAccess] } });
+
+		await spr._handleIncomingMessage(activity({ response: bulkUpdateResponse }));
+
+		assert.deepStrictEqual(
+			received(tokens.fullAccess).map((a) => a.params.id),
+			[cars.owned.id.toString()],
+		);
 	});
 
 	it('relays only the entities a token-level policy selects', async () => {
@@ -377,11 +416,11 @@ describe('bootstrap-spr:_handleIncomingMessage projection', () => {
 		const spr = new BootstrapSocketPolicyRouter();
 		const emitted = [];
 		spr.__nrp = { emit: (event, json) => emitted.push(JSON.parse(json)) };
-		spr._policyCache = {
+		spr._policyCache = withConnections({
 			getPoliciesByRestActivity: async () => [namePolicy(keys)],
 			getConnectedTokenIdsByPolicyId: async () => [token.id.toString()],
-		};
-		sinon.stub(Model, 'getAppModel').resolves({ findById: async () => car });
+		});
+		sinon.stub(Model, 'getAppModel').resolves({ ...carModel, findById: async () => car });
 
 		await spr._handleIncomingMessage({
 			broadcast: true,
@@ -489,15 +528,16 @@ describe('bootstrap-spr:_handleIncomingMessage conditions and queries', () => {
 		const spr = new BootstrapSocketPolicyRouter();
 		const emitted = [];
 		spr.__nrp = { emit: (event, json) => emitted.push(JSON.parse(json)) };
-		spr._policyCache = {
+		spr._policyCache = withConnections({
 			getPoliciesByRestActivity: async () => policies,
 			getConnectedTokenIdsByPolicyId: async () => [token.id.toString()],
-		};
-		sinon.stub(Model, 'getAppModel').resolves({ findById: async () => car });
+		});
+		sinon.stub(Model, 'getAppModel').resolves({ ...carModel, findById: async () => car });
 		sinon.stub(Model, 'getCoreModel').callsFake((modelClass) => {
 			const docs = modelClass === TokenSchemaModel ? [token] : [user];
 			return {
 				createId: (id) => new ObjectId(id),
+				find: async (query) => findDocs(docs, query),
 				findOne: async (query) => docs.find((doc) => doc.id.equals(query._id)) || null,
 			};
 		});
@@ -553,6 +593,15 @@ describe('bootstrap-spr:_handleIncomingMessage conditions and queries', () => {
 		assert.strictEqual((await relay([queryPolicy(same)])).length, 1);
 	});
 
+	// SR-DPC-001 S21: a data sharing agreement's config could be stored with text there, which matched by its substrings
+	it("doesn't relay an activity for a config whose verbs or schema aren't lists", async () => {
+		const asText = (config) => ({ ...queryPolicy({}), config: [{ ...queryPolicy({}).config[0], ...config }] });
+
+		assert.deepStrictEqual(await relay([asText({ verbs: 'GET,PUT' })]), []);
+		assert.deepStrictEqual(await relay([asText({ schema: 'cars-and-vans' })]), []);
+		assert.strictEqual((await relay([asText({ schema: ['car'] })])).length, 1);
+	});
+
 	it("checks a condition on the token's user against each token", async () => {
 		const admin = { '#env.user.role': { '@eq': 'admin' } };
 		const editor = { '#env.user.role': { '@eq': 'editor' } };
@@ -560,6 +609,449 @@ describe('bootstrap-spr:_handleIncomingMessage conditions and queries', () => {
 		assert.strictEqual((await relay([policy(admin)])).length, 1);
 		assert.deepStrictEqual(await relay([policy(editor)]), []);
 	});
+});
+
+// A policy's configs are evaluated together, as REST evaluates them (R5): a token gets one activity for a policy, with
+// the properties of each config that reads the entity, and a policy is evaluated for each token only when a config's
+// query or condition refers to the token's user.
+describe('bootstrap-spr:_handleIncomingMessage a policy evaluated as REST evaluates it', () => {
+  const APP_ID = new ObjectId().toString();
+  const owner = { id: new ObjectId() };
+  const someoneElse = { id: new ObjectId() };
+  const tokens = {
+    owner: { id: new ObjectId(), type: 'user', _userId: owner.id.toString() },
+    other: { id: new ObjectId(), type: 'user', _userId: someoneElse.id.toString() },
+  };
+  const car = { id: new ObjectId(), name: 'car', secret: 'hidden', userId: owner.id };
+  const renamed = { type: 'scalar', path: 'name', value: 'renamed' };
+  const changed = { type: 'scalar', path: 'secret', value: 'changed' };
+
+  const config = (query, keys) => ({ verbs: ['GET'], schema: ['car'], query, projection: keys ? { keys } : null, condition: null });
+  const policy = (configs, env = null) => ({ id: 'policy', name: 'policy', _appId: APP_ID, env, config: configs });
+
+  afterEach(() => sinon.restore());
+
+  async function relay(relayed) {
+    const spr = new BootstrapSocketPolicyRouter();
+    const emitted = [];
+    spr.__nrp = { emit: (event, json) => emitted.push(JSON.parse(json)) };
+    spr._policyCache = withConnections({
+      getPoliciesByRestActivity: async () => [relayed],
+      getConnectedTokenIdsByPolicyId: async () => Object.values(tokens).map((token) => token.id.toString()),
+    });
+    sinon.stub(Model, 'getAppModel').resolves({ ...carModel, findById: async () => car });
+    // The token and user reads the SPR makes to evaluate a policy for each token
+    const reads = [];
+    sinon.stub(Model, 'getCoreModel').callsFake((modelClass) => {
+      const docs = modelClass === TokenSchemaModel ? Object.values(tokens) : [owner, someoneElse];
+      return {
+        createId: (id) => new ObjectId(id),
+        find: async (query) => {
+          reads.push(modelClass.name);
+          return findDocs(docs, query);
+        },
+        findOne: async (query) => {
+          reads.push(modelClass.name);
+          return docs.find((doc) => doc.id.equals(query._id)) || null;
+        },
+      };
+    });
+
+    await spr._handleIncomingMessage({
+      broadcast: true,
+      path: `/car/${car.id}`,
+      pathSpec: 'car/:id',
+      verb: 'put',
+      params: { id: car.id.toString() },
+      response: [renamed, changed],
+      appAPIPath: 'test-app',
+      appId: APP_ID,
+      isSuper: false,
+      isCoreSchema: false,
+      schemaName: 'car',
+    });
+
+    const received = (token) => emitted.filter((e) => e.tokens.includes(token.id.toString())).map((e) => e.activity.response);
+    return { emitted, reads, owner: received(tokens.owner), other: received(tokens.other) };
+  }
+
+  it("sends a token one activity for a policy's configs that read the entity, with the properties of each", async () => {
+    const both = policy([config({ access: '%FULL_ACCESS%' }, ['name']), config({ name: { '@eq': 'car' } }, ['secret'])]);
+    const { owner: ownerGot, other } = await relay(both);
+
+    assert.deepStrictEqual(ownerGot, [[renamed, changed]]);
+    assert.deepStrictEqual(other, [[renamed, changed]]);
+  });
+
+  it("evaluates every config of a policy for each token when one refers to the token's user", async () => {
+    const ownersSecret = policy([
+      config({ access: '%FULL_ACCESS%' }, ['name']),
+      config({ userId: { '@eq': '#env.user.id' } }, ['secret']),
+    ]);
+    const { owner: ownerGot, other } = await relay(ownersSecret);
+
+    assert.deepStrictEqual(ownerGot, [[renamed, changed]]);
+    assert.deepStrictEqual(other, [[renamed]]);
+  });
+
+  it("evaluates a policy once when only an env value it doesn't use refers to the user", async () => {
+    const { emitted, reads } = await relay(policy([config({ access: '%FULL_ACCESS%' })], { userId: '#env.user.id' }));
+
+    assert.strictEqual(emitted.length, 1);
+    assert.deepStrictEqual(emitted[0].tokens.sort(), Object.values(tokens).map((token) => token.id.toString()).sort());
+    assert.deepStrictEqual(reads, []);
+  });
+});
+
+// A token gets one activity for an entity, with what all its policies let it read (R5), and tokens that may read the
+// same of it are sent it in one message
+describe('bootstrap-spr:_handleIncomingMessage one activity per token', () => {
+  const APP_ID = new ObjectId().toString();
+  const owner = { id: new ObjectId() };
+  const tokens = {
+    a: { id: new ObjectId(), type: 'user', _userId: owner.id.toString() },
+    b: { id: new ObjectId(), type: 'user', _userId: owner.id.toString() },
+    c: { id: new ObjectId(), type: 'user', _userId: owner.id.toString() },
+  };
+  const car = { id: new ObjectId(), name: 'car', secret: 'hidden', userId: owner.id };
+  const renamed = { type: 'scalar', path: 'name', value: 'renamed' };
+  const changed = { type: 'scalar', path: 'secret', value: 'changed' };
+
+  const policy = (id, query, keys) => ({
+    id,
+    name: id,
+    _appId: APP_ID,
+    env: null,
+    config: [{ verbs: ['GET'], schema: ['car'], query, projection: keys ? { keys } : null, condition: null }],
+  });
+  const everything = { access: '%FULL_ACCESS%' };
+  const owned = { userId: { '@eq': '#env.user.id' } };
+
+  afterEach(() => sinon.restore());
+
+  async function relay(policies, connections) {
+    const spr = new BootstrapSocketPolicyRouter();
+    const emitted = [];
+    spr.__nrp = { emit: (event, json) => emitted.push(JSON.parse(json)) };
+    spr._policyCache = withConnections({
+      getPoliciesByRestActivity: async () => policies,
+      getConnectedTokenIdsByPolicyId: async (policyId) => connections[policyId].map((token) => token.id.toString()),
+    });
+    sinon.stub(Model, 'getAppModel').resolves({ ...carModel, findById: async () => car });
+    const reads = [];
+    sinon.stub(Model, 'getCoreModel').callsFake((modelClass) => {
+      const docs = modelClass === TokenSchemaModel ? Object.values(tokens) : [owner];
+      return {
+        createId: (id) => new ObjectId(id),
+        find: async (query) => {
+          reads.push(modelClass.name);
+          return findDocs(docs, query);
+        },
+        findOne: async (query) => {
+          reads.push(modelClass.name);
+          return docs.find((doc) => doc.id.equals(query._id)) || null;
+        },
+      };
+    });
+
+    await spr._handleIncomingMessage({
+      broadcast: true,
+      path: `/car/${car.id}`,
+      pathSpec: 'car/:id',
+      verb: 'put',
+      params: { id: car.id.toString() },
+      response: [renamed, changed],
+      appAPIPath: 'test-app',
+      appId: APP_ID,
+      isSuper: false,
+      isCoreSchema: false,
+      schemaName: 'car',
+    });
+
+    const received = (token) => emitted.filter((e) => e.tokens.includes(token.id.toString())).map((e) => e.activity.response);
+    return { emitted, reads, received };
+  }
+
+  it('sends a token one activity for all its policies, with what each lets it read', async () => {
+    const names = policy('names', everything, ['name']);
+    const secrets = policy('secrets', everything, ['secret']);
+    const { received } = await relay([names, secrets], { names: [tokens.a, tokens.b], secrets: [tokens.a] });
+
+    assert.deepStrictEqual(received(tokens.a), [[renamed, changed]]);
+    assert.deepStrictEqual(received(tokens.b), [[renamed]]);
+  });
+
+  it('sends the tokens that may read the same of an activity one message between them', async () => {
+    const all = policy('all', everything);
+    const own = policy('own', owned);
+    const { emitted } = await relay([all, own], { all: [tokens.a, tokens.b], own: [tokens.c] });
+
+    assert.strictEqual(emitted.length, 1);
+    assert.deepStrictEqual(emitted[0].tokens.sort(), [tokens.a, tokens.b, tokens.c].map((t) => t.id.toString()).sort());
+  });
+
+  it("relays what a token's other policies let it read when one's query has a logical operator without a list", async () => {
+    const broken = policy('broken', { '@or': ['x'] });
+    const names = policy('names', everything, ['name']);
+    const { received } = await relay([broken, names], { broken: [tokens.a], names: [tokens.a] });
+
+    assert.deepStrictEqual(received(tokens.a), [[renamed]]);
+  });
+
+  it("logs a policy that fails to be evaluated, and relays what the token's other policies let it read", async () => {
+    const buildPolicyQuery = AccessControlFilter.buildPolicyQuery;
+    sinon.stub(AccessControlFilter, 'buildPolicyQuery').callsFake(function (query, ...rest) {
+      if (query.failing) throw new Error('the env lookup went away');
+      return buildPolicyQuery.call(this, query, ...rest);
+    });
+    const logged = sinon.stub(Logging, 'logError');
+    const failing = policy('failing', { failing: true });
+    const names = policy('names', everything, ['name']);
+    const { received } = await relay([failing, names], { failing: [tokens.a], names: [tokens.a] });
+
+    assert.deepStrictEqual(received(tokens.a), [[renamed]]);
+    assert.ok(logged.calledWithMatch(/the env lookup went away/), String(logged.args));
+  });
+
+  it("reads a token's user once for an activity, however many of its policies refer to it", async () => {
+    const own = policy('own', owned, ['name']);
+    const ownSecrets = policy('own-secrets', owned, ['secret']);
+    const { reads, received } = await relay([own, ownSecrets], { own: [tokens.a], 'own-secrets': [tokens.a] });
+
+    assert.deepStrictEqual(received(tokens.a), [[renamed, changed]]);
+    assert.deepStrictEqual(reads, ['Token', 'User']);
+  });
+});
+
+// What an activity costs the SPR (BUG-14): no entity is read for the system tokens' copy, or when no token is connected
+// to a policy for the schema, and the tokens and users the policies refer to are read in one look each.
+describe('bootstrap-spr:_handleIncomingMessage the work an activity takes', () => {
+  const APP_ID = new ObjectId().toString();
+  const owner = { id: new ObjectId() };
+  const systemToken = { id: new ObjectId(), type: 'system' };
+  const tokens = {
+    a: { id: new ObjectId(), type: 'user', _userId: owner.id.toString() },
+    b: { id: new ObjectId(), type: 'user', _userId: owner.id.toString() },
+  };
+  const car = { id: new ObjectId(), name: 'car', userId: owner.id };
+  const policy = (id, query) => ({
+    id,
+    name: id,
+    _appId: APP_ID,
+    env: null,
+    config: [{ verbs: ['GET'], schema: ['car'], query, condition: null }],
+  });
+
+  afterEach(() => sinon.restore());
+
+  async function relay(overrides, policies, connections) {
+    const spr = new BootstrapSocketPolicyRouter();
+    const emitted = [];
+    spr.__nrp = { emit: (event, json) => emitted.push(JSON.parse(json)) };
+    spr._policyCache = withConnections({
+      getPoliciesByRestActivity: async () => policies,
+      getConnectedTokenIdsByPolicyId: async (policyId) => (connections[policyId] ?? []).map((token) => token.id.toString()),
+    });
+    let entityReads = 0;
+    sinon.stub(Model, 'getAppModel').resolves({
+      ...carModel,
+      findById: async () => {
+        entityReads++;
+        return car;
+      },
+    });
+    const reads = [];
+    sinon.stub(Model, 'getCoreModel').callsFake((modelClass) => {
+      const docs = modelClass === TokenSchemaModel ? [systemToken, ...Object.values(tokens)] : [owner];
+      return {
+        createId: (id) => new ObjectId(id),
+        find: async (query) => {
+          reads.push(modelClass.name);
+          return findDocs(docs, query);
+        },
+        findOne: async (query) => {
+          reads.push(modelClass.name);
+          return docs.find((doc) => doc.id.equals(query._id)) || null;
+        },
+      };
+    });
+
+    await spr._handleIncomingMessage({
+      broadcast: true,
+      path: `/car/${car.id}`,
+      pathSpec: 'car/:id',
+      verb: 'put',
+      params: { id: car.id.toString() },
+      response: [{ type: 'scalar', path: 'name', value: 'renamed' }],
+      appAPIPath: 'test-app',
+      appId: APP_ID,
+      isSuper: false,
+      isCoreSchema: false,
+      schemaName: 'car',
+      ...overrides,
+    });
+    return { emitted, entityReads, reads };
+  }
+
+  it("reads no entity for the system tokens' copy of an activity", async () => {
+    const { emitted, entityReads } = await relay({ isSuper: true }, [], {});
+
+    assert.strictEqual(entityReads, 0);
+    assert.deepStrictEqual(emitted.map((e) => e.tokens), [[systemToken.id.toString()]]);
+  });
+
+  it('reads no entity when no token is connected to a policy for the schema', async () => {
+    const { emitted, entityReads } = await relay({}, [policy('all', { access: '%FULL_ACCESS%' })], {});
+
+    assert.strictEqual(entityReads, 0);
+    assert.deepStrictEqual(emitted, []);
+  });
+
+  it('reads the tokens and the users that policies refer to in one look each', async () => {
+    const own = policy('own', { userId: { '@eq': '#env.user.id' } });
+    const { emitted, reads } = await relay({}, [own], { own: [tokens.a, tokens.b] });
+
+    assert.deepStrictEqual(reads, ['Token', 'User']);
+    assert.deepStrictEqual(emitted.map((e) => e.tokens.length), [2]);
+  });
+});
+
+// Activities for one entity are relayed in the order they arrive, though each is handled as it arrives; one that fails
+// is logged and doesn't stop the next.
+describe('bootstrap-spr:_handleIncomingMessage order', () => {
+  const APP_ID = new ObjectId().toString();
+  const car = { id: new ObjectId(), name: 'car' };
+  const token = { id: new ObjectId(), type: 'app' };
+  const policy = {
+    id: 'policy-full-access',
+    name: 'full-access',
+    _appId: APP_ID,
+    env: null,
+    config: [{ verbs: ['GET'], schema: ['car'], query: { access: '%FULL_ACCESS%' }, condition: null }],
+  };
+  const update = (name, id = car.id) => ({
+    broadcast: true,
+    path: `/car/${id}`,
+    pathSpec: 'car/:id',
+    verb: 'put',
+    params: { id: id.toString() },
+    response: [{ type: 'scalar', path: 'name', value: name }],
+    appAPIPath: 'test-app',
+    appId: APP_ID,
+    isSuper: false,
+    isCoreSchema: false,
+    schemaName: 'car',
+  });
+
+  afterEach(() => sinon.restore());
+
+  // The entity is read slowly for the first activity and at once for the others
+  function createSPR(firstRead) {
+    const spr = new BootstrapSocketPolicyRouter();
+    const relayed = [];
+    spr.__nrp = { emit: (event, json) => relayed.push(JSON.parse(json).activity.response[0].value) };
+    spr._policyCache = withConnections({
+      getPoliciesByRestActivity: async () => [policy],
+      getConnectedTokenIdsByPolicyId: async () => [token.id.toString()],
+    });
+    let reads = 0;
+    sinon.stub(Model, 'getAppModel').resolves({
+      ...carModel,
+      findById: async () => (reads++ === 0 ? firstRead() : car),
+    });
+    return { spr, relayed };
+  }
+
+  it('relays the activities for one entity in the order they arrive', async () => {
+    const { spr, relayed } = createSPR(() => new Promise((resolve) => setTimeout(() => resolve(car), 30)));
+
+    await Promise.all([spr._handleIncomingMessage(update('first')), spr._handleIncomingMessage(update('second'))]);
+
+    assert.deepStrictEqual(relayed, ['first', 'second']);
+  });
+
+  it("doesn't hold up another entity's activities", async () => {
+    const { spr, relayed } = createSPR(() => new Promise((resolve) => setTimeout(() => resolve(car), 30)));
+
+    await Promise.all([
+      spr._handleIncomingMessage(update('slow')),
+      spr._handleIncomingMessage(update('other', new ObjectId())),
+    ]);
+
+    assert.deepStrictEqual(relayed, ['other', 'slow']);
+  });
+
+  // A bulk update of A (read slowly) and B, then an update of B alone: B's part of the bulk was queued only once A's
+  // was done, so the later update overtook it
+  const bulkUpdate = (name, ids) => ({
+    ...update(name),
+    path: '/car/bulk/update',
+    pathSpec: 'car/bulk/update',
+    verb: 'post',
+    params: {},
+    response: ids.map((id) => ({ id: id.toString(), results: [{ type: 'scalar', path: 'name', value: name }] })),
+  });
+
+  function createBulkSPR(readOf) {
+    const spr = new BootstrapSocketPolicyRouter();
+    const relayed = [];
+    spr.__nrp = {
+      emit: (event, json) => {
+        const { activity } = JSON.parse(json);
+        relayed.push(`${activity.params.id}:${activity.response[0].value}`);
+      },
+    };
+    spr._policyCache = withConnections({
+      getPoliciesByRestActivity: async () => [policy],
+      getConnectedTokenIdsByPolicyId: async () => [token.id.toString()],
+    });
+    sinon.stub(Model, 'getAppModel').resolves({ ...carModel, findById: readOf });
+    return { spr, relayed };
+  }
+
+  it("relays a bulk activity's change to an entity before a later change to it", async () => {
+    const other = { id: new ObjectId(), name: 'other' };
+    const { spr, relayed } = createBulkSPR(async (id) =>
+      String(id) === other.id.toString() ? new Promise((resolve) => setTimeout(() => resolve(other), 30)) : car,
+    );
+
+    await Promise.all([
+      spr._handleIncomingMessage(bulkUpdate('bulk', [other.id, car.id])),
+      spr._handleIncomingMessage(update('after')),
+    ]);
+
+    assert.deepStrictEqual(
+      relayed.filter((entry) => entry.startsWith(car.id.toString())),
+      [`${car.id}:bulk`, `${car.id}:after`],
+    );
+  });
+
+  it("handles a bulk activity's entities one after another", async () => {
+    let reading = 0;
+    let most = 0;
+    const { spr } = createBulkSPR(async () => {
+      most = Math.max(most, ++reading);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      reading--;
+      return car;
+    });
+
+    await spr._handleIncomingMessage(bulkUpdate('bulk', [new ObjectId(), new ObjectId(), car.id]));
+
+    assert.strictEqual(most, 1);
+  });
+
+  it('relays the next activity for an entity when one fails, logging the failure', async () => {
+    const { spr, relayed } = createSPR(async () => {
+      throw new Error('the datastore went away');
+    });
+    const logged = sinon.stub(Logging, 'logError');
+
+    await Promise.all([spr._handleIncomingMessage(update('failed')), spr._handleIncomingMessage(update('second'))]);
+
+    assert.deepStrictEqual(relayed, ['second']);
+    assert.ok(logged.calledWithMatch(/the datastore went away/), String(logged.args));
+  });
 });
 
 describe('bootstrap-spr: deleted tokens', () => {
@@ -656,8 +1148,8 @@ describe('bootstrap-spr: activities not to broadcast', () => {
     const spr = new BootstrapSocketPolicyRouter();
     const emitted = [];
     spr.__nrp = { emit: (event, json) => emitted.push(JSON.parse(json)) };
-    spr._policyCache = { getPoliciesByRestActivity: async () => [] };
-    sinon.stub(Model, 'getAppModel').resolves({ findById: async () => ({ id: 'car-1' }) });
+    spr._policyCache = withConnections({ getPoliciesByRestActivity: async () => [] });
+    sinon.stub(Model, 'getAppModel').resolves({ ...carModel, findById: async () => ({ id: 'car-1' }) });
     sinon.stub(Model, 'getCoreModel').returns({ find: async () => [{ id: 'system-token', type: 'system' }] });
 
     await spr._handleIncomingMessage({
@@ -677,7 +1169,7 @@ describe('bootstrap-spr: core schema activity', () => {
     const spr = new BootstrapSocketPolicyRouter();
     const emitted = [];
     spr.__nrp = { emit: (event, json) => emitted.push({ event, ...JSON.parse(json) }) };
-    spr._policyCache = { getPoliciesByRestActivity: sinon.stub().resolves([]), getConnectedTokenIdsByPolicyId: async () => [] };
+    spr._policyCache = withConnections({ getPoliciesByRestActivity: sinon.stub().resolves([]), getConnectedTokenIdsByPolicyId: async () => [] });
     const systemToken = { id: new ObjectId(), type: 'system' };
     sinon.stub(Model, 'getCoreModel').returns({ find: async () => [systemToken] });
     const user = { id: new ObjectId().toString() };
@@ -721,20 +1213,21 @@ describe('bootstrap-spr:_handleIncomingMessage a collection with remotes', () =>
 	const federatedCars = () => {
 		const model = Object.create(RemoteCombinedModel.prototype);
 		model.app = { id: APP_ID };
-		model._sdsRouting = { get: async (appId, sourceId) => (sourceId === PARTNER_ID ? 'ds-1' : undefined) };
+		model._partnerAppIds = new Map([['ds-1', PARTNER_ID]]);
+		model._unreachable = new Set();
 		model._localModel = { findById: async (id) => (id === ownCar.id ? ownCar : null) };
 		model._remoteModels = [{ dataSharingId: 'ds-1', findById: async (id) => (id === partnerCar.id ? partnerCar : null) }];
-		return model;
+		return Object.assign(model, carModel);
 	};
 
 	async function relay(activity) {
 		const spr = new BootstrapSocketPolicyRouter();
 		const emitted = [];
 		spr.__nrp = { emit: (event, json) => emitted.push(JSON.parse(json)) };
-		spr._policyCache = {
+		spr._policyCache = withConnections({
 			getPoliciesByRestActivity: async () => [policy],
 			getConnectedTokenIdsByPolicyId: async () => [token.id.toString()],
-		};
+		});
 		sinon.stub(Model, 'getAppModel').resolves(federatedCars());
 		sinon.stub(Model, 'getCoreModel').returns({ createId: (id) => new ObjectId(id), findOne: async () => token });
 
@@ -773,6 +1266,30 @@ describe('bootstrap-spr:_handleIncomingMessage a collection with remotes', () =>
 		const sent = await relay({ path: `/car/${ownCar.id}`, pathSpec: 'car/:id', params: { id: ownCar.id } });
 
 		assert.strictEqual(sent.length, 1);
+	});
+
+	it("relays a change made here to a partner's entity, looking it up through the agreement the write went through", async () => {
+		const sent = await relay({ path: `/car/${partnerCar.id}`, pathSpec: 'car/:id', params: { id: partnerCar.id }, dataShareId: 'ds-1' });
+
+		assert.deepStrictEqual(sent.map((e) => e.activity.params.id), [partnerCar.id]);
+	});
+
+	it('relays each entity a bulk update changed, looking each up where it was changed', async () => {
+		const renamed = [{ type: 'scalar', path: 'name', value: 'renamed' }];
+		const sent = await relay({
+			verb: 'post',
+			path: '/car/bulk/update',
+			pathSpec: 'car/bulk/update',
+			params: {},
+			response: [
+				{ id: ownCar.id, results: renamed },
+				{ id: partnerCar.id, sourceId: PARTNER_ID, results: renamed },
+			],
+			dataShareIds: [null, 'ds-1'],
+		});
+
+		assert.deepStrictEqual(sent.map((e) => e.activity.params.id), [ownCar.id, partnerCar.id]);
+		assert.ok(sent.every((e) => e.activity.dataShareIds === undefined && e.activity.dataShareId === undefined), "the agreements aren't sent on");
 	});
 });
 

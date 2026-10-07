@@ -21,7 +21,7 @@ import sinon from 'sinon';
 import Route from '../../../../../dist/routes/route.js';
 import DeleteMany from '../../../../../dist/routes/schema-routes/delete-many.js';
 import { ApiError } from '../../../../../dist/helpers/errors.js';
-import { createSchemaModel, newId } from '../../../../schema-model.js';
+import { createFederatedSchemaModel, createSchemaModel, newId } from '../../../../schema-model.js';
 
 // A real schema model, so the route and access control run the real parseQuery, over rows in memory
 const schema = {
@@ -171,5 +171,27 @@ describe('schema-routes/DeleteMany:_respond/_broadcast', () => {
     assert.deepStrictEqual(broadcastResult, [{ id: DOC_1 }, { id: DOC_2 }]);
     assert.strictEqual(path, '/test-schema/bulk/delete');
     assert.strictEqual(isSuper, true);
+  });
+});
+
+describe('schema-routes/DeleteMany: a collection with remotes', () => {
+  // agreement-1's partner names app-c, agreement-2's partner app, as its record's source, as when a partner names
+  // another partner's app
+  it('deletes each record from where it was read, whatever source it names', async () => {
+    const own = [{ id: DOC_1 }, { id: DOC_3 }];
+    const partner = [{ id: DOC_2, sourceId: 'app-c' }];
+    const { model, datastores } = createFederatedSchemaModel(
+      schema,
+      own,
+      { 'agreement-1': partner, 'agreement-2': [] },
+      { 'agreement-1': 'app-a', 'agreement-2': 'app-c' },
+    );
+    const route = createRoute(model);
+    const req = { body: [DOC_1, DOC_2], context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
+
+    await route._exec(req, {}, await route._validate(req, {}));
+
+    assert.deepStrictEqual([own.map((row) => row.id), partner], [[DOC_3], []]);
+    assert.deepStrictEqual(datastores['agreement-2'].calls.filter(([call]) => call !== 'find'), []);
   });
 });

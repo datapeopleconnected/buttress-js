@@ -98,6 +98,10 @@ export default class AbstractAdapter<TUri = unknown> {
     throw new Errors.NotYetImplemented('add');
   }
 
+  /**
+   * Applies one update-by-path to an entity. An adapter that stores the entity itself works the model's derived fields
+   * out again, in the same write, when the update touches a field in its derivedFrom (see StandardModel.deriveFields).
+   */
   async batchUpdateProcess(
     _id: string,
     _body: UpdatePathBody,

@@ -37,6 +37,8 @@ export interface RequestContext {
   authUser: User | null;
   authApp: App | null;
   token: Token | null;
+  // The token a lambda endpoint was called with, which the lambda runs as only when its endpoint uses the caller's token
+  callerToken: Token | null;
   clientSessionId: string | null;
   apiPath?: string;
   pathSpec?: string;
@@ -44,6 +46,10 @@ export interface RequestContext {
   changeOwners?: Map<string, string>;
   // The entities a delete removed, as they were stored (see Route._keepEntitiesBeingDeleted).
   deletedEntities?: Record<string, unknown>[];
+  // The agreement a write to a partner's record went through, for the SPR to find the record there; for a bulk
+  // update, one for each entity it applied, in order, null for the app's own.
+  dataShareId?: string;
+  dataShareIds?: (string | null)[];
   isPluginPath: boolean;
   ac: {
     policyConfigs: parsedPolicyConfig[];
@@ -69,5 +75,10 @@ export interface RequestContext {
 declare module 'express-serve-static-core' {
   interface Request {
     context: RequestContext;
+  }
+
+  // Express routes QUERY (RFC 10008) on a Node that parses it, but its types predate the method
+  interface IRouter {
+    query: IRouterMatcher<this>;
   }
 }

@@ -50,6 +50,21 @@ const [
 
 const HEX_ID = '507f1f77bcf86cd799439011';
 
+// A policy as it's stored, its configs' fields there with their defaults
+const storedPolicy = () => ({
+  id: HEX_ID,
+  name: 'editors',
+  config: [
+    {
+      verbs: ['GET'], endpoints: [], schema: ['car'], env: null, projection: null,
+      query: { status: { '@eq': 'open' } },
+      condition: { '@or': [{ '#env.role': { '@eq': 'admin' } }, { '#env.role': { '@eq': 'owner' } }] },
+    },
+    { verbs: ['GET'], endpoints: [], schema: ['car'], env: null, projection: null, query: { access: '%FULL_ACCESS%' }, condition: null },
+  ],
+  _appId: '6abd05000000000000000001',
+});
+
 // A find that answers the scoped model's lookup of rows by id, as the datastore would when they're all the app's,
 // and gives `rows` for any other query
 const findRows = (rows = []) =>
@@ -373,6 +388,71 @@ describe('routes/api/policy:UpdatePolicy', () => {
     assert.deepStrictEqual(exists.firstCall.args, [HEX_ID, null, { _appId: '6abd05000000000000000001' }]);
   });
 
+  it('checks an update below a config field with the configs it leaves, reading the policy in the caller\'s app', async () => {
+    const findOne = sinon.stub().resolves(storedPolicy());
+    stubModel({ policy: { ...realQueryParser(PolicySchemaModel), validateUpdate: realValidateUpdate(PolicySchemaModel), findOne } });
+    const route = createRoute(UpdatePolicy);
+    const update = (body) => route._validate(createReq({ params: { id: HEX_ID }, body }));
+
+    await assert.rejects(update([{ path: 'config.0.condition.@or.1', value: { '#env.role': {} } }]), {
+      status: 400,
+      code: 'invalid_policy',
+      details: { issues: [{ path: 'config.0.condition.@or.1.#env.role', code: 'required' }] },
+    });
+    await assert.rejects(update([{ path: 'config.0.query.status', value: { '@in': 'open' } }]), {
+      status: 400,
+      code: 'invalid_policy',
+      details: { issues: [{ path: 'config.0.query.status', code: 'type', expected: 'array' }] },
+    });
+    assert.deepStrictEqual(findOne.firstCall.args, [{ id: HEX_ID, _appId: '6abd05000000000000000001' }]);
+
+    assert.deepStrictEqual(await update([{ path: 'config.0.condition.@or.1', value: { '#env.role': { '@eq': 'editor' } } }]), {
+      id: HEX_ID,
+    });
+  });
+
+  it('refuses a config written past the end of the list, which would leave a null config before it', async () => {
+    stubModel({ policy: { ...realQueryParser(PolicySchemaModel), validateUpdate: realValidateUpdate(PolicySchemaModel), findOne: async () => storedPolicy() } });
+    const route = createRoute(UpdatePolicy);
+    const config = { verbs: ['GET'], schema: ['car'], query: { access: '%FULL_ACCESS%' } };
+
+    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID }, body: [{ path: 'config.3', value: config }] })), {
+      status: 400,
+      code: 'invalid_policy',
+      details: { issues: [{ path: 'config.2', code: 'type', expected: 'object' }] },
+    });
+    // At the end of the list, it's added
+    assert.deepStrictEqual(await route._validate(createReq({ params: { id: HEX_ID }, body: [{ path: 'config.2', value: config }] })), {
+      id: HEX_ID,
+    });
+  });
+
+  it("doesn't read the policy for an update that writes no config by its index", async () => {
+    const findOne = sinon.stub().resolves(storedPolicy());
+    stubModel({ policy: { ...realQueryParser(PolicySchemaModel), validateUpdate: realValidateUpdate(PolicySchemaModel), findOne } });
+    const route = createRoute(UpdatePolicy);
+
+    await route._validate(createReq({ params: { id: HEX_ID }, body: [{ path: 'name', value: 'x' }, { path: 'config.0.__remove__', value: '' }] }));
+
+    assert.strictEqual(findOne.callCount, 0);
+  });
+
+  it('refuses an update below a config field of a policy the caller has not got', async () => {
+    stubModel({
+      policy: {
+        ...realQueryParser(PolicySchemaModel),
+        validateUpdate: realValidateUpdate(PolicySchemaModel),
+        findOne: async () => null,
+        exists: sinon.stub().resolves(false),
+      },
+    });
+    const route = createRoute(UpdatePolicy);
+
+    await assert.rejects(
+      route._validate(createReq({ params: { id: HEX_ID }, body: [{ path: 'config.0.query.status', value: 'x' }] })),
+      { status: 404, code: 'not_found' },
+    );
+  });
 });
 
 describe('routes/api/policy:BulkUpdatePolicy', () => {
@@ -403,6 +483,27 @@ describe('routes/api/policy:BulkUpdatePolicy', () => {
     await assert.rejects(
       route._validate(createReq({ body: [{ id: HEX_ID, body: { path: 'bad.path' } }] })),
       /Update path is invalid/,
+    );
+  });
+
+  it("checks a policy's updates from every item that names it, in turn, with the configs they leave", async () => {
+    const findOne = sinon.stub().callsFake(async (query) => (query.id === HEX_ID ? storedPolicy() : null));
+    stubModel({ policy: { ...realQueryParser(PolicySchemaModel), validateUpdate: realValidateUpdate(PolicySchemaModel), findOne } });
+    const route = createRoute(BulkUpdatePolicy);
+    const config = { verbs: ['GET'], schema: ['car'], query: { access: '%FULL_ACCESS%' } };
+
+    // Each alone leaves configs that can grant something; together the second writes past the end of the list the first
+    // shortens
+    await assert.rejects(
+      route._validate(createReq({ body: [
+        { id: HEX_ID, body: { path: 'config.0.__remove__', value: '' } },
+        { id: HEX_ID, body: [{ path: 'config.2', value: config }] },
+      ] })),
+      { status: 400, code: 'invalid_policy', details: { issues: [{ path: 'config.1', code: 'type', expected: 'object' }] } },
+    );
+    await assert.rejects(
+      route._validate(createReq({ body: [{ id: HEX_ID, body: { path: 'config.0.condition.@or.1', value: { '#env.role': {} } } }] })),
+      { status: 400, code: 'invalid_policy', details: { issues: [{ path: 'config.0.condition.@or.1.#env.role', code: 'required' }] } },
     );
   });
 

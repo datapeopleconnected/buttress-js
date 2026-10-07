@@ -36,6 +36,37 @@ describe('helpers/egress', () => {
     }
   });
 
+  it('judges an IPv6 address that carries an IPv4 one by that IPv4 address, in any of its forms', () => {
+    for (const ip of [
+      // IPv4-mapped loopback and private, in hex as a URL writes them, expanded, upper case and dotted
+      '::ffff:7f00:1', '::ffff:a00:1', '::ffff:a9fe:a9fe', '0:0:0:0:0:ffff:7f00:1', '0000:0000:0000:0000:0000:FFFF:7F00:0001',
+      '::FFFF:127.0.0.1', '0:0:0:0:0:ffff:192.168.1.1',
+      // IPv4-compatible, IPv4-translated and NAT64
+      '::7f00:1', '::127.0.0.1', '::ffff:0:7f00:1', '::ffff:0:10.0.0.1', '64:ff9b::a00:1', '64:ff9b::127.0.0.1',
+    ]) {
+      assert.strictEqual(isPublicAddress(ip), false, ip);
+    }
+    for (const ip of ['::ffff:5db8:d822', '::ffff:93.184.216.34', '64:ff9b::808:808', '::ffff:0:8.8.8.8']) {
+      assert.strictEqual(isPublicAddress(ip), true, ip);
+    }
+  });
+
+  it('tells IPv6 ranges apart by their value rather than how the address is written', () => {
+    for (const ip of ['FD12:3456::1', 'fe80::1%eth0', 'febf::1', 'ff02::1', '0:0:0:0:0:0:0:1', '0::0']) {
+      assert.strictEqual(isPublicAddress(ip), false, ip);
+    }
+    // fc0::, fe0:: and ff0:: are 0fc0::, 0fe0:: and 0ff0::, which are none of those
+    for (const ip of ['fc0::1', 'fe0::1', 'ff0::1', '2001:db8:fe80::1', '2a00:1450::ffff:7f00:1']) {
+      assert.strictEqual(isPublicAddress(ip), true, ip);
+    }
+  });
+
+  it('refuses a URL to an IPv4-mapped loopback address under a * allow-list, however it is written', async () => {
+    for (const url of ['http://[::ffff:7f00:1]/', 'http://[::ffff:127.0.0.1]:9200/', 'http://[0:0:0:0:0:ffff:7f00:1]/']) {
+      assert.strictEqual(await checkDestination(url, ['*']), 'address_not_allowed', url);
+    }
+  });
+
   it('allows any destination when no allow-list is set', async () => {
     assert.strictEqual(await checkDestination('http://127.0.0.1:9200/', []), null);
   });

@@ -21,6 +21,7 @@ import sinon from 'sinon';
 import { ObjectId } from 'bson';
 import { MongoClient } from 'mongodb';
 import createConfig from '@dpc/node-env-obj';
+import { Readable } from 'node:stream';
 
 import MongodbAdapter, { applyUpdateOps, mergeUpdateOps } from '../../../../../dist/datastore/adapters/mongodb.js';
 import { Datastore } from '../../../../../dist/datastore/index.js';
@@ -225,6 +226,68 @@ describe('datastore/adapters/MongodbAdapter: single-item writes to typed arrays'
 });
 
 // A null item of a typed array used to become an item of defaults (item schema) or a stored null (item type).
+// The item validateUpdate gives, read as a create reads one, is what's stored and given back, so nothing is generated
+// twice (SR-DPC-001 D2)
+describe('datastore/adapters/MongodbAdapter: array items as validated', () => {
+  const REF = '507f1f77bcf86cd799439012';
+  const logbookSchema = {
+    name: 'logbook',
+    type: 'collection',
+    extends: [],
+    properties: {
+      entries: {
+        __type: 'array',
+        __allowUpdate: true,
+        __schema: {
+          at: { __type: 'date', __default: null, __allowUpdate: true },
+          count: { __type: 'number', __default: 0, __allowUpdate: true },
+          ref: { __type: 'id', __default: null, __allowUpdate: true },
+          _key: { __type: 'string', __default: 'randomString', __allowUpdate: true },
+        },
+      },
+    },
+  };
+  const given = () => ({ at: '2026-01-02', count: '7', ref: REF, _key: 'client', extra: 'x' });
+
+  const write = async (body) => {
+    const { model, ops } = createModel(logbookSchema);
+    const { validation, body: validated } = model.validateUpdate(body);
+    assert.strictEqual(validation.isValid, true);
+    const results = await model.updateByPath(validated, ID);
+    return { validated: validated[0].value, ops, results };
+  };
+
+  const assertStored = (item, validated) => {
+    assert.deepStrictEqual(Object.keys(item), ['at', 'count', 'ref', '_key']);
+    assert.deepStrictEqual(item.at, new Date('2026-01-02'));
+    assert.strictEqual(item.count, 7);
+    assert.ok(isObjectId(item.ref) && item.ref.toHexString() === REF);
+    assert.notStrictEqual(item._key, 'client');
+    assert.strictEqual(item._key, validated._key);
+  };
+
+  it('pushes the item validated', async () => {
+    const { validated, ops, results } = await write({ path: 'entries', value: given() });
+
+    assertStored(ops[0].$push.entries, validated);
+    assert.deepStrictEqual(results, [{ type: 'vector-add', path: 'entries', value: validated }]);
+  });
+
+  it('sets the item validated by its index', async () => {
+    const { validated, ops, results } = await write({ path: 'entries.0', value: given() });
+
+    assertStored(ops[0].$set['entries.0'], validated);
+    assert.deepStrictEqual(results, [{ type: 'scalar', path: 'entries.0', value: validated }]);
+  });
+
+  it('replaces the whole array with the items validated', async () => {
+    const { validated, ops, results } = await write({ path: 'entries', value: [given(), given()] });
+
+    ops[0].$set.entries.forEach((item, idx) => assertStored(item, validated[idx]));
+    assert.deepStrictEqual(results, [{ type: 'scalar', path: 'entries', value: validated }]);
+  });
+});
+
 describe('datastore/adapters/MongodbAdapter: null items in typed arrays', () => {
   for (const [label, body, invalidValue] of [
     ['push to an item-schema array', { path: 'contacts', value: null }, 'contacts:null[null] [object]'],
@@ -533,6 +596,106 @@ describe('datastore/adapters/MongodbAdapter: one request, one write', () => {
   });
 });
 
+// A model's derived fields (StandardModel.deriveFields) are worked out from the entity as updated, in the same write
+describe('datastore/adapters/MongodbAdapter: derived fields', () => {
+  // The number of tags, worked out from the tags and kept beside them
+  function createDerivingModel(stored) {
+    const created = createModel(organisationSchema, stored);
+    Object.defineProperty(created.model, 'derivedFrom', { value: ['tags', 'notes'] });
+    created.model.deriveFields = (entity) => ({ tagCount: entity.tags?.length ?? 0, notesSeen: entity.notes !== undefined });
+    return created;
+  }
+
+  it('works them out from the entity as updated and writes them with it, if nothing it read has changed', async () => {
+    const { model, ops } = createDerivingModel({ tags: ['a'], notes: ['n'] });
+    const filters = [];
+    const updateOne = model.adapter.collection.updateOne;
+    model.adapter.collection.updateOne = async (filter, update) => {
+      filters.push(filter);
+      return updateOne(filter, update);
+    };
+
+    await update(model, [{ path: 'tags', value: 'b' }]);
+
+    assert.deepStrictEqual(ops, [{ $set: { tags: ['a', 'b'], tagCount: 2, notesSeen: true } }]);
+    const [{ _id, ...unchanged }] = filters;
+    assert.strictEqual(_id.toHexString(), ID);
+    assert.deepStrictEqual(unchanged, { tags: ['a'], notes: ['n'] });
+  });
+
+  it('works them out after every update of the request, in one write', async () => {
+    const { model, ops } = createDerivingModel({ tags: ['a', 'b'] });
+
+    await update(model, [
+      { path: 'tags.0.__remove__', value: '' },
+      { path: 'tags', value: 'c' },
+      { path: 'contacts.0.name', value: 'Alice' },
+    ]);
+
+    assert.strictEqual(ops.length, 1);
+    assert.deepStrictEqual(ops[0].$set.tags, ['b', 'c']);
+    assert.strictEqual(ops[0].$set.tagCount, 2);
+    assert.strictEqual(ops[0].$set.notesSeen, false);
+  });
+
+  it('leaves them alone for an update to other fields, which is written without reading', async () => {
+    const { model, ops } = createDerivingModel({ tags: ['a'] });
+    model.adapter.collection.findOne = async () => assert.fail('should not read the entity');
+
+    await update(model, { path: 'contacts.0.name', value: 'Alice' });
+
+    assert.deepStrictEqual(ops, [{ $set: { 'contacts.0.name': 'Alice' } }]);
+  });
+
+  it('refuses an update whose derived value another entity has, as for any unique value', async () => {
+    const { model } = createDerivingModel({ tags: ['a'] });
+    model.adapter.collection.updateOne = async () => {
+      throw Object.assign(new Error('E11000'), {
+        code: 11000,
+        errmsg: 'E11000 duplicate key error collection: test.organisations index: unique_tagCount dup key: { tagCount: 2 }',
+      });
+    };
+
+    await assert.rejects(() => update(model, { path: 'tags', value: 'b' }), { status: 400, code: 'duplicate', details: { path: 'tagCount' } });
+  });
+});
+
+// The adapter is where a Buttress query becomes MongoDB's: the model hands it the query in Buttress's terms
+describe('datastore/adapters/MongodbAdapter: queries', () => {
+  function createAdapter() {
+    const adapter = new MongodbAdapter(new URL('mongodb://localhost/test'), {});
+    const filters = [];
+    const cursor = { skip: () => cursor, limit: () => cursor, sort: () => cursor, project: () => cursor, stream: () => Readable.from([]) };
+    adapter.collection = {
+      find: (filter) => {
+        filters.push(filter);
+        return cursor;
+      },
+      countDocuments: async (filter) => {
+        filters.push(filter);
+        return 0;
+      },
+    };
+    adapter.updateSchema({ name: 'car', type: 'collection', properties: { name: { __type: 'string' } } });
+    return { adapter, filters };
+  }
+
+  it("gives MongoDB a Buttress query in MongoDB's terms, to find and to count", async () => {
+    const { adapter, filters } = createAdapter();
+
+    for await (const _doc of adapter.find({ name: { $rexi: '^red' }, $or: [{ age: { $not: 3 } }] })) {
+      // nothing stored
+    }
+    await adapter.count({ name: { $rex: 'x' } });
+
+    assert.deepStrictEqual(filters, [
+      { name: { $regex: '^red', $options: 'i' }, $or: [{ age: { $ne: 3 } }] },
+      { name: { $regex: 'x' } },
+    ]);
+  });
+
+});
+
 describe('datastore/adapters/MongodbAdapter:mergeUpdateOps', () => {
   it('merges operations on separate paths into one update document', () => {
     assert.deepStrictEqual(mergeUpdateOps([{ $set: { a: 1 } }, { $push: { b: 2 } }, { $set: { 'c.d': 3 } }]), {
@@ -752,9 +915,9 @@ describe('datastore/adapters/MongodbAdapter: exists', () => {
 
     assert.strictEqual(await adapter.exists(ID, { _appId: APP_ID }), true);
 
-    const [filter] = filters;
-    assert(isObjectId(filter._id) && filter._id.toHexString() === ID);
-    assert(isObjectId(filter._appId) && filter._appId.toHexString() === APP_ID);
+    const [{ $and: [byId, extra] }] = filters;
+    assert(isObjectId(byId._id) && byId._id.toHexString() === ID);
+    assert(isObjectId(extra._appId) && extra._appId.toHexString() === APP_ID);
   });
 
   it('converts an extra filter given with operators', async () => {
@@ -762,8 +925,29 @@ describe('datastore/adapters/MongodbAdapter: exists', () => {
 
     await adapter.exists(ID, { _appId: { $in: [APP_ID] } });
 
-    const [filter] = filters;
-    assert(isObjectId(filter._appId.$in[0]) && filter._appId.$in[0].toHexString() === APP_ID);
+    const [{ $and: [, extra] }] = filters;
+    assert(isObjectId(extra._appId.$in[0]) && extra._appId.$in[0].toHexString() === APP_ID);
+  });
+
+  it('keeps the id asked for when the extra filter names an id of its own, as the apps tenant clause does', async () => {
+    const { adapter, filters } = createAdapter();
+
+    await adapter.exists(ID, { id: APP_ID });
+
+    const [{ $and: parts }] = filters;
+    assert.deepStrictEqual(
+      parts.map((part) => part._id.toHexString()),
+      [ID, APP_ID],
+    );
+  });
+
+  it('counts by the id alone when there is no extra filter', async () => {
+    const { adapter, filters } = createAdapter();
+
+    await adapter.exists(ID);
+
+    assert.deepStrictEqual(Object.keys(filters[0]), ['_id']);
+    assert.strictEqual(filters[0]._id.toHexString(), ID);
   });
 
   it('gives false for an invalid id without counting', async () => {
@@ -802,6 +986,7 @@ describe('datastore/adapters/MongodbAdapter: unique properties', () => {
       meta: { serial: { __type: 'number', __default: null, __unique: true } },
       label: { __type: 'string', __default: null },
       items: { __type: 'array', __schema: { sku: { __type: 'string', __unique: true } } },
+      aliases: { __type: 'array', __itemtype: 'string', __unique: true },
     },
   };
   const createAdapter = (createIndex) => {
@@ -818,6 +1003,8 @@ describe('datastore/adapters/MongodbAdapter: unique properties', () => {
       [{ code: 1 }, { unique: true, name: 'unique_code', partialFilterExpression: { code: { $type: 'string' } } }],
       [{ ownerId: 1 }, { unique: true, name: 'unique_ownerId', partialFilterExpression: { ownerId: { $type: 'objectId' } } }],
       [{ 'meta.serial': 1 }, { unique: true, name: 'unique_meta.serial', partialFilterExpression: { 'meta.serial': { $type: 'number' } } }],
+      // A list's values, so no two entities share one, and an entity without any isn't indexed
+      [{ aliases: 1 }, { unique: true, name: 'unique_aliases', partialFilterExpression: { aliases: { $type: 'string' } } }],
     ]);
   });
 
@@ -828,7 +1015,7 @@ describe('datastore/adapters/MongodbAdapter: unique properties', () => {
       throw Object.assign(new Error('E11000 duplicate key error'), { code: 11000 });
     }).updateSchema(schema);
 
-    assert.strictEqual(calls, 3);
+    assert.strictEqual(calls, 4);
   });
 
   it('refuses a write that repeats a unique value with 400 duplicate, naming the property', async () => {

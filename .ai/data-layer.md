@@ -38,11 +38,30 @@ Key things to know:
   `adapter.updateSchema()`. **All actual DB work is delegated to `this.adapter`** — `StandardModel`
   itself has no MongoDB-specific code; `find`, `findOne`, `add`, `update`, `rm`, `count`, etc. are thin
   pass-throughs to the adapter (see Datastore adapters below).
-- `parseQuery()` / `parseQueryProperty()` translate Buttress's REST query DSL into MongoDB operators:
-  `$not`→`$ne`, `$elMatch`→`$elemMatch`, `$gtDate`/`$ltDate`/`$gteDate`/`$lteDate`→`$gt`/`$lt`/`$gte`/`$lte`,
-  `$rex`/`$rexi`→`$regex` (with `i` flag for `$rexi`), `$inProp`→`$regex`. It also auto-converts string
-  operands to `ObjectId`s for properties whose schema type is `id`, and to `Date` for `__type: 'date'`.
-  This is the layer that both REST query params and Access Control query injection go through.
+- **A Buttress query and a MongoDB query are kept apart.** `parseQuery()` / `parseQueryProperty()` check a
+  Buttress query (the DSL clients send and partners are sent) and read its values, and give back a **Buttress
+  query**: operators in their own `$` names (`@op` as `$op`; `$rexi`, `$not`, `$gtDate`, `$inProp`, `$elMatch` stay
+  as they are), values decoded as their properties' types (`__decodeOperand`, D-2). They refuse an operator the
+  registry ([src/access-control/operators.ts](../src/access-control/operators.ts) `ALIASES`) doesn't know, or any
+  other operator-prefixed name in a property's place, with 400 `unknown_operator` `{path, received}`; an operand
+  MongoDB couldn't take (`$in` without a list, a pattern that isn't one…; `operandProblem` in operators.ts, which a
+  policy's query is checked by when it's saved) with 400 `invalid_value`; and, for a schema with `strict: true`, a
+  path it doesn't define (`isQueryPath` in update-paths.ts) with 400 `unknown_path`, as for a path naming `__proto__`
+  whatever the schema. A query's and a schema's names are read as their own properties, never Object.prototype's. An
+  object without operator names is a value, compared whole (`$eq`), as MongoDB compares one. An `$elMatch` of
+  operators only (`{$gt: 1}`, `isValueOperators`) tests a list's values, each operator read by `parseQueryProperty` as
+  it is on the list outside `$elMatch` (its operand checked, a comparison's decoded as the `__itemtype`); any other is
+  a query on its items, its own `$or`/`$and`/`$nor` included.
+- **Only the MongoDB adapter makes MongoDB's query**, in `MongodbAdapter._query`: `toMongoQuery()` (the registry's
+  translation: `$rexi`→`$regex` + `$options: 'i'`, `$not`→`$ne`, `$gtDate`→`$gt`, `$inProp`→escaped `$regex`,
+  `$elMatch`→`$elemMatch`, `@and`→`$and`), then the id conversion. The Buttress adapter forwards the Buttress query
+  as it is, so a partner checks it as its own client's. In-memory matching (`matchQuery`, realtime's and
+  `models-access`'s) runs on `toMongoQuery`'s output, as it decides as MongoDB does, missing fields included (a
+  document without the field reads as null, an array's items that aren't documents are passed over); the e2e oracle
+  (`test/e2e/access-control/operators.test.js`) checks it against MongoDB itself, so add a row there for any new
+  case. Don't put MongoDB-only names into a parsed query, and don't translate before the adapter.
+  This is the layer that both REST query params and Access Control query injection go through; `models-access`
+  re-parses the combined query with `checkPaths: false`, as the route already checked the client's part.
 - `updateByPath()` implements Buttress's **path-based PUT** semantics (`{path, value}` updates), used for
   partial/vector updates (`vector-add`, `vector-rm`, `scalar-increment`). `resolveUpdatePath()` in
   [src/model/update-paths.ts](../src/model/update-paths.ts) walks a path's segments against the flattened schema
@@ -88,8 +107,10 @@ which walks the flattened schema as a tree (cached per flattened schema) and giv
 invalid}`: the value to store, with defaults and each value read as its type, and every problem. It never changes the
 body. `validateSchemaObject` (the issues, plus a `strict` schema's unknown fields) and `sanitizeSchemaObject` (the
 value) in [src/model/shared.ts](../src/model/shared.ts) are both views of it, so what's checked and what's stored can't
-disagree; the Mongo adapter reads an array item an update writes through it too. A nested object (a property without
-`__type`) that's given something other than an object or null is refused.
+disagree. `validateUpdate` reads an array item an update writes through it too (`checkArrayItem` in shared.ts) and
+gives the update that item, so it's what the adapter stores (the Mongo adapter) or sends (the Buttress adapter), what
+the result gives, and what the activity and path-mutation lambdas see; `updateByPath` takes validated updates only. A
+nested object (a property without `__type`) that's given something other than an object or null is refused.
 
 Every value is read as its `__type` through one codec per type, `decode()` in
 [src/helpers/codecs.ts](../src/helpers/codecs.ts): bodies (`checkProp` in `helpers/schema.ts`),
@@ -98,7 +119,20 @@ issue, `{path, code, expected?, received?}`, which `invalidEntityError`/`invalid
 `details.issues`. A schema with `strict: true` refuses fields it doesn't define on create. A `__private` property never
 leaves in a response (`Route._respond` strips it, `Helpers.Schema.stripPrivate`); a `__unique` one gets a unique
 partial index from the Mongo adapter's `updateSchema()` when the model starts (a failed build is logged, D-25), and a
-write that breaks it is 400 `duplicate` (`uniquePathOf` reads the index name, `unique_<path>`).
+write that breaks it is 400 `duplicate` (`uniquePathOf` reads the index name, `unique_<path>`). On a list of values
+(`__itemtype`) the index is multikey: no two entities share a value in it, one may repeat its own.
+
+A model can store **derived fields**, worked out from its other fields so the datastore can index them:
+`StandardModel.deriveFields(entity)` gives them and `derivedFrom` names the top-level fields they come from.
+`__parseAddBody` adds them on create; on an update touching a `derivedFrom` field, the Mongo adapter takes the
+read-then-write path (`_applyUpdateOpsInOneWrite`), works them out from the entity as updated and writes them in the
+same conditional write. Any other write (`updateById`, `update`) bypasses this and must set them itself. The one user
+so far is `UserSchemaModel`'s private `_authKeys` (`authKeys()`: `[appId, app, 'appId'|'email', value]` as JSON for each
+auth entry's non-empty id and email), unique so two creates of the same user at once can't both be stored: AddUser's
+look-up in `_validate` happens before the insert. A duplicate `_authKeys` becomes 400
+`user_already_exists_with_that_name` in the model, on add and on update. A unique index straight over `auth.app` +
+`auth.appId` was ruled out: an entry without an id is indexed as `null`, so two users who each have one for the same
+app would collide, and a partial filter can't leave out single array items.
 
 ## Datastore adapters
 

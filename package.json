@@ -1,7 +1,7 @@
 {
   "name": "@buttress/buttress-js",
   "type": "module",
-  "version": "3.0.0-6",
+  "version": "3.0.0",
   "description": "The federated real-time open data platform",
   "author": "Data People Connected LTD",
   "license": "AGPL-3.0-or-later",
@@ -40,8 +40,8 @@
     "check": "tsc --noEmit && npm run lint && npm run format && npm run licence-check && npm run docs:check",
     "docker:build": "docker build -t buttress .",
     "docker:build-token": "npm run docker:build -- --build-arg NPM_TOKEN=${NPM_TOKEN}",
-    "docker:run": "docker-compose -f .docker/docker-compose.yml up",
-    "docker:run-full": "docker-compose -f .docker/docker-compose.full.yml up",
+    "docker:run": "docker compose -f .docker/docker-compose.yml up",
+    "docker:run-full": "docker compose -f .docker/docker-compose.full.yml up",
     "prepare": "[ -e .git ] && git config core.hooksPath .githooks || true",
     "nvm": "~/.nvm/nvm-exec which node | xargs -I {} bash -c 'ln -sf \"{}\" ./.nvm-node' && chmod +x ./.nvm-node"
   },
@@ -53,12 +53,11 @@
     "url": "https://github.com/datapeopleconnected/buttress-js/issues"
   },
   "dependencies": {
-    "@buttress/api": "3.0.0-56",
-    "@dpc/node-env-obj": "npm:@jsr/dpc__node-env-obj@^0.3.3",
+    "@buttress/api": "3.0.0-62",
+    "@dpc/node-env-obj": "npm:@jsr/dpc__node-env-obj@^0.3.4",
     "@hashgraph/sdk": "^2.81.0",
     "@redis/client": "^5.12.1",
     "@socket.io/redis-adapter": "^8.3.0",
-    "@socket.io/redis-emitter": "~5.1.0",
     "bson": "^7.2.0",
     "express": "~5.2.1",
     "isolated-vm": "~6.1.2",

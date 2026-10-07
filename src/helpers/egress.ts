@@ -55,6 +55,25 @@ const NON_PUBLIC_IPV4: Array<[string, number]> = [
 ];
 
 /**
+ * The eight 16-bit groups of a valid IPv6 address, written in any of its forms: with `::`, in either case, with a zone,
+ * or ending in a dotted IPv4 address.
+ */
+const ipv6Groups = (ip: string): number[] => {
+  let address = ip.split('%')[0];
+  const dotted = address.match(/^(.*:)(\d+\.\d+\.\d+\.\d+)$/);
+  if (dotted) {
+    const ipv4 = ipv4ToNumber(dotted[2]);
+    address = `${dotted[1]}${Math.floor(ipv4 / 0x10000).toString(16)}:${(ipv4 % 0x10000).toString(16)}`;
+  }
+
+  const [head, tail] = address.split('::');
+  const groupsOf = (part: string) => (part === '' ? [] : part.split(':').map((group) => parseInt(group, 16)));
+  const before = groupsOf(head);
+  const after = tail === undefined ? [] : groupsOf(tail);
+  return [...before, ...new Array<number>(8 - before.length - after.length).fill(0), ...after];
+};
+
+/**
  * Whether an IP address is on the public internet, rather than loopback, private, link-local, shared, multicast or
  * reserved.
  */
@@ -62,12 +81,21 @@ export const isPublicAddress = (ip: string): boolean => {
   if (net.isIPv4(ip)) return !NON_PUBLIC_IPV4.some(([base, bits]) => inIpv4Range(ip, base, bits));
   if (!net.isIPv6(ip)) return false;
 
-  const address = ip.toLowerCase();
-  const mapped = address.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped) return isPublicAddress(mapped[1]);
-  if (address === '::' || address === '::1') return false;
+  const groups = ipv6Groups(ip);
+  // An address that carries an IPv4 one in its last 32 bits reaches that IPv4 address, written in hex
+  // (::ffff:7f00:1, as a URL gives it) or dotted: IPv4-compatible (::/96, which holds :: and ::1), IPv4-mapped
+  // (::ffff:0:0/96), IPv4-translated (::ffff:0:0:0/96) and NAT64 (64:ff9b::/96)
+  const prefix = groups
+    .slice(0, 6)
+    .map((group) => group.toString(16))
+    .join(':');
+  if (['0:0:0:0:0:0', '0:0:0:0:0:ffff', '0:0:0:0:ffff:0', '64:ff9b:0:0:0:0'].includes(prefix)) {
+    const [high, low] = groups.slice(6);
+    return isPublicAddress([high >> 8, high & 0xff, low >> 8, low & 0xff].join('.'));
+  }
   // Unique local (fc00::/7), link-local (fe80::/10) and multicast (ff00::/8)
-  return !/^(f[cd]|fe[89ab]|ff)/.test(address);
+  const [first] = groups;
+  return (first & 0xfe00) !== 0xfc00 && (first & 0xffc0) !== 0xfe80 && (first & 0xff00) !== 0xff00;
 };
 
 const hostAllowed = (host: string, allowedHosts: string[]) =>

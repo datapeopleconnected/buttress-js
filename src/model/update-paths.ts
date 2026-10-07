@@ -52,13 +52,16 @@ const isIncrementable = (config: FlattenedSchemaProperty) =>
  * the array, with an index, not as their own keys.
  */
 const matchKey = (schemaFlat: FlattenedSchema, segments: string[]) => {
+  // The schema's own keys, not names an object has from Object.prototype
+  const own = (key: string) => (Object.hasOwn(schemaFlat, key) ? schemaFlat[key] : undefined);
+
   for (let length = segments.length; length > 0; length--) {
     const key = segments.slice(0, length).join('.');
-    if (!schemaFlat[key]) continue;
+    if (!own(key)) continue;
 
     const withinArray = segments
       .slice(0, length - 1)
-      .some((_, idx) => schemaFlat[segments.slice(0, idx + 1).join('.')]?.__type === 'array');
+      .some((_, idx) => own(segments.slice(0, idx + 1).join('.'))?.__type === 'array');
     if (withinArray) continue;
 
     return { key, rest: segments.slice(length) };
@@ -107,6 +110,39 @@ const resolveSegments = (schemaFlat: FlattenedSchema, segments: string[]): Resol
 
   return { error: 'unknown_path' };
 };
+
+// Whether a query's path, as segments, is one the schema has
+const querySegments = (schemaFlat: FlattenedSchema, segments: string[]): boolean => {
+  const match = matchKey(schemaFlat, segments);
+  // A nested object, compared whole, whose properties are flattened beneath it
+  if (!match) return Object.keys(schemaFlat).some((key) => key.startsWith(`${segments.join('.')}.`));
+
+  const { key, rest } = match;
+  const config = schemaFlat[key];
+  // A property typed object owns everything beneath it
+  if (rest.length === 0 || config.__type === 'object') return true;
+  if (config.__type !== 'array') return false;
+
+  // An array's item, or, through an item (an index or every item), one of its properties
+  const withinItem = INDEX.test(rest[0]) ? rest.slice(1) : rest;
+  if (withinItem.length === 0) return true;
+  if (config.__schema) return querySegments(config.__schema, withinItem);
+  return !config.__itemtype;
+};
+
+/**
+ * Whether a query's path is one the schema has: a property, a nested object or one of its properties, a path beneath
+ * a property typed object, an array's item (`tags.0`) or an item's property (`lines.sku`, `lines.0.sku`), or a path
+ * into the items of an array that doesn't type them. `_`-prefixed internals always are.
+ * @param {Object} schemaFlat - the model's flattened schema, or an array's flattened item schema
+ * @param {string} path - e.g. `lines.0.sku`
+ * @return {boolean}
+ */
+export function isQueryPath(schemaFlat: FlattenedSchema, path: string): boolean {
+  if (typeof path !== 'string' || path === '') return false;
+  if (path.startsWith('_')) return true;
+  return querySegments(schemaFlat, path.split('.'));
+}
 
 /**
  * What an update path writes to, and how, in the schema; or why it can't be updated.

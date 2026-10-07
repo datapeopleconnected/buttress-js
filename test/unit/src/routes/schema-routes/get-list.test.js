@@ -90,6 +90,20 @@ describe('schema-routes/GetList:_exec', () => {
     { id: DOC_2, ownerId: USER_2 },
   ];
 
+  // SR-DPC-001 C2: false was passed on as the query params, so every entity was listed, or a policy's query failed
+  for (const [name, ac] of [
+    ['no query', { policyConfigs: [{}] }],
+    ['a query', { policyConfigs: [{ query: { ownerId: USER_1 } }] }],
+  ]) {
+    it(`lists nothing for a query that asks for zero results, under a policy with ${name}`, async () => {
+      const route = createRoute(createFakeModel(docs));
+
+      const result = await route._exec(createReq({ ac }), {}, false);
+
+      assert.deepStrictEqual(Array.isArray(result) ? result : await streamAll(result), []);
+    });
+  }
+
   it('returns docs scoped to the access-control policy', async () => {
     const route = createRoute(createFakeModel(docs));
     const req = createReq({ ac: { policyConfigs: [{ query: { ownerId: USER_1 } }] } });

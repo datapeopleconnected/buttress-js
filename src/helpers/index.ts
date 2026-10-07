@@ -17,9 +17,11 @@ import { Readable, Transform, TransformCallback, TransformOptions } from 'node:s
 import { ObjectId } from 'bson';
 
 import * as DataSharingHelpers from './data-sharing.js';
+import { badRequest } from './errors.js';
 
 import Datastore from '../datastore/index.js';
 import { isObjectId } from '../datastore/adapters/object-id.js';
+import { ALIASES, isPlainObject } from '../access-control/operators.js';
 import { Properties, FlattenedSchema, FlattenedSchemaProperty } from '../types/schema.js';
 
 export const DataSharing = DataSharingHelpers;
@@ -384,6 +386,19 @@ export const streamAll = <T>(stream: unknown): Promise<T[]> => {
 export const isDomainList = (domains: unknown): domains is string[] =>
   Array.isArray(domains) && domains.every((domain) => typeof domain === 'string' && domain.trim() !== '');
 
+/**
+ * A search's `skip` and `limit`, each 0 when it's left out. One that isn't a number, or is below 0, is refused with
+ * 400 invalid_value_skip or invalid_value_limit, rather than reaching the datastore.
+ */
+export const searchPaging = (body: { skip?: number | string; limit?: number | string } | undefined) => {
+  // parseInt takes numbers too, it converts them to a string first
+  const skip = body?.skip ? parseInt(body.skip as string) : 0;
+  const limit = body?.limit ? parseInt(body.limit as string) : 0;
+  if (isNaN(skip) || skip < 0) throw badRequest('invalid_value_skip', 'skip must be a number of 0 or more');
+  if (isNaN(limit) || limit < 0) throw badRequest('invalid_value_limit', 'limit must be a number of 0 or more');
+  return { skip, limit };
+};
+
 export const trimSlashes = (str: string) => {
   return str ? str.replace(/^\/+|\/+$/g, '') : str;
 };
@@ -426,34 +441,66 @@ export const checkAppPolicyProperty = async (
       continue;
     }
 
-    let operator: string | null = null;
-    if (typeof policyProperties[key] === 'object') {
-      [operator] = Object.keys(policyProperties[key] as object);
-    }
     // The app's list holds the allowed values for each key
     const appPolicyPropertiesValues = ([] as PolicyPropertyValue[]).concat(appPolicyList[key]);
-    const equalValue = operator ? (policyProperties[key] as Record<string, unknown>)[operator] : policyProperties[key];
-    if (equalValue === null || equalValue === undefined) {
-      res.passed = false;
-      res.errMessage = 'Policy property value not listed';
-    }
+    // Only a value exactly as the app lists it (D-34)
+    const isListed = (value: unknown) => appPolicyPropertiesValues.some((val) => val === value);
+    // An array, as given or as an operator like @in takes, is listed when every value in it is
+    const isAllowed = (operand: unknown) => {
+      if (operand === null || operand === undefined) return false;
+      const values = Array.isArray(operand) ? operand : [operand];
+      return values.length > 0 && values.every(isListed);
+    };
 
-    // Text is compared without case; anything else only matches a listed value of its own type
-    const isListed = (value: unknown) =>
-      appPolicyPropertiesValues.some((val) =>
-        typeof val === 'string' && typeof value === 'string'
-          ? val.toUpperCase() === value.toUpperCase()
-          : val === value,
-      );
-    // An array, as an operator like @in takes, is listed when every value in it is
-    const values = Array.isArray(equalValue) ? equalValue : [equalValue];
-    if (equalValue !== undefined && (values.length < 1 || !values.every(isListed))) {
+    // An operator object gives its values by every operator it names, anything else is the value itself
+    const value = policyProperties[key];
+    const operands = isPlainObject(value) ? Object.values(value) : [value];
+    if (operands.length < 1 || !operands.every(isAllowed)) {
       res.passed = false;
       res.errMessage = 'Policy property value not listed';
     }
   }
 
   return res;
+};
+
+/**
+ * Whether a policy's selection names only properties and values `appPolicyList` lists, each key checked as
+ * checkAppPolicyProperty checks it. `@and` and `@or` must hold a list of one or more selections, each checked the same
+ * way. A selection with no keys names nothing, and passes.
+ * @param {object} appPolicyList - the app's policy property list
+ * @param {object} selection
+ * @return {Promise<{passed: boolean, errMessage: string}>}
+ */
+export const checkPolicySelection = async (
+  appPolicyList: Record<string, PolicyPropertyValue | PolicyPropertyValue[]> | null | undefined,
+  selection: Record<string, unknown>,
+): Promise<{ passed: boolean; errMessage: string }> => {
+  for (const [key, criteria] of Object.entries(selection)) {
+    if (key === '@and' || key === '@or') {
+      const isSelection = (branch: unknown) =>
+        typeof branch === 'object' && branch !== null && !Array.isArray(branch) && Object.keys(branch).length > 0;
+      if (!Array.isArray(criteria) || criteria.length < 1 || !criteria.every(isSelection)) {
+        return { passed: false, errMessage: `${key} takes a list of selections` };
+      }
+
+      for (const branch of criteria as Record<string, unknown>[]) {
+        const res = await checkPolicySelection(appPolicyList, branch);
+        if (!res.passed) return res;
+      }
+      continue;
+    }
+
+    // A criterion names only operators Buttress knows (R3 step 7)
+    if (isPlainObject(criteria) && Object.keys(criteria).some((operator) => !Object.hasOwn(ALIASES, operator))) {
+      return { passed: false, errMessage: 'Policy selection names an operator Buttress does not know' };
+    }
+
+    const res = await checkAppPolicyProperty(appPolicyList, { [key]: criteria });
+    if (!res.passed) return res;
+  }
+
+  return { passed: true, errMessage: '' };
 };
 
 export const compareByProps = (
@@ -646,6 +693,8 @@ export class ExpireMap<K = unknown, V = unknown> extends Map<K, unknown> {
     this.clear();
   }
 
+  // Sweeps out what has expired every expireTime, whether or not it's looked up. The sweep doesn't keep the process
+  // alive.
   _gc() {
     this.gcTimeout = setTimeout(() => {
       for (const key of this.keys()) {
@@ -654,5 +703,6 @@ export class ExpireMap<K = unknown, V = unknown> extends Map<K, unknown> {
 
       this._gc();
     }, this.expireTime);
+    this.gcTimeout.unref();
   }
 }

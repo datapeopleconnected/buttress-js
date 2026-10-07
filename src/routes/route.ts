@@ -121,6 +121,9 @@ const Constants = {
     POST: 'post',
     PUT: 'put',
     DEL: 'delete',
+    // A read whose query is the body (RFC 10008)
+    QUERY: 'query',
+    // QUERY's name in the drafts before RFC 10008: a route registered for either answers both, until SEARCH goes
     SEARCH: 'search',
   } as const,
   BulkRequests: {
@@ -132,8 +135,29 @@ const Constants = {
 // The express router method each route is registered with
 export type RouteVerb = (typeof Constants.Verbs)[keyof typeof Constants.Verbs];
 
-const AuthTypeOrder = Object.values(Constants.Type);
+// The verbs whose routes only read, so log no activity, broadcast nothing and change nothing
+const READ_VERBS: readonly RouteVerb[] = [Constants.Verbs.GET, Constants.Verbs.QUERY, Constants.Verbs.SEARCH];
+export const isReadVerb = (verb: RouteVerb) => READ_VERBS.includes(verb);
+
+// The router methods a route of `verb` is registered for: a QUERY route answers SEARCH too
+export const routerMethods = (verb: RouteVerb): RouteVerb[] =>
+  verb === Constants.Verbs.QUERY || verb === Constants.Verbs.SEARCH
+    ? [Constants.Verbs.QUERY, Constants.Verbs.SEARCH]
+    : [verb];
+
+// The media types a QUERY's body may be in, for the Accept-Query header (RFC 10008 §3)
+export const QUERY_MEDIA_TYPES = ['application/json'];
+
+// When SEARCH was deprecated in favour of QUERY, as the Deprecation header gives it (RFC 9745): 2026-10-05
+const SEARCH_DEPRECATED_AT = '@1791158400';
+
+const AuthTypeOrder: string[] = Object.values(Constants.Type);
 const authTypeIdx = (type: string) => AuthTypeOrder.indexOf(type);
+
+// Whether a route's auth type is one of the order's. Any other would rank below every token, so a route with one
+// refuses every request rather than letting every token through.
+export const isKnownAuthType = (type: unknown): type is string =>
+  typeof type === 'string' && AuthTypeOrder.includes(type);
 
 // A valid token that can't call the route
 const insufficientAuthority = () =>
@@ -232,6 +256,31 @@ export default class Route {
   }
 
   /**
+   * A QUERY route says which bodies it takes, and refuses a QUERY whose Content-Type is missing or one it can't read,
+   * as RFC 10008 §2 requires. A SEARCH, the method's old name, is answered as before but told it's deprecated.
+   */
+  _checkQueryMethod(req: Request, res: Response) {
+    if (!routerMethods(this.verb).includes(Constants.Verbs.QUERY)) return;
+
+    res.set('Accept-Query', QUERY_MEDIA_TYPES.map((type) => `"${type}"`).join(', '));
+
+    if (req.method === 'SEARCH') {
+      res.set('Deprecation', SEARCH_DEPRECATED_AT);
+      Logging.logDebug(`SEARCH ${req.path} is deprecated, send QUERY`, req.context.id);
+      return;
+    }
+
+    const mediaType = req.get('Content-Type')?.split(';')[0]?.trim().toLowerCase();
+    if (!mediaType || !QUERY_MEDIA_TYPES.includes(mediaType)) {
+      throw Helpers.Errors.unsupportedMediaType(
+        'unsupported_query_type',
+        `A QUERY's body must be one of ${QUERY_MEDIA_TYPES.join(', ')}`,
+        { accepted: QUERY_MEDIA_TYPES },
+      );
+    }
+  }
+
+  /**
    * @param {Object} req - ExpressJS request object
    * @param {Object} res - ExpresJS response object
    * @param {Function} next - ExpressJS next function, given the error of a result stream that fails after exec has
@@ -257,6 +306,8 @@ export default class Route {
       );
       throw Helpers.Errors.internal('Tried to exec route but no exec function defined');
     }
+
+    this._checkQueryMethod(req, res);
 
     await this._authenticate(req, res);
 
@@ -294,7 +345,7 @@ export default class Route {
 
       result.pipe(resStream);
 
-      if (this.verb !== Constants.Verbs.GET && this.verb !== Constants.Verbs.SEARCH) {
+      if (!isReadVerb(this.verb)) {
         result.pipe(broadcastStream);
       }
 
@@ -354,7 +405,7 @@ export default class Route {
         const prepared = this.redactResults
           ? Helpers.Schema.prepareSchemaResult(chunk, this.addSourceId ? this._dataApp(req).id : null)
           : chunk;
-        return Helpers.Schema.stripPrivate(prepared, this._privatePaths);
+        return this._withoutPrivate(prepared);
       });
 
       res.set('Content-Type', 'application/json');
@@ -381,7 +432,7 @@ export default class Route {
     const prepared = this.redactResults
       ? Helpers.Schema.prepareSchemaResult(result, this.addSourceId ? this._dataApp(req).id : null)
       : result;
-    res.json(Helpers.Schema.stripPrivate(prepared, this._privatePaths));
+    res.json(this._withoutPrivate(prepared));
 
     this._close(req);
 
@@ -399,12 +450,8 @@ export default class Route {
   _logActivity(req: Request, _res: Response) {
     req.context.timings.logActivity = req.context.timer.interval;
     Logging.logTimer('_logActivity:start', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
-    if (this.verb === Constants.Verbs.GET) {
-      Logging.logTimer('_logActivity:end-get', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
-      return;
-    }
-    if (this.verb === Constants.Verbs.SEARCH) {
-      Logging.logTimer('_logActivity:end-search', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+    if (isReadVerb(this.verb)) {
+      Logging.logTimer('_logActivity:end-read', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
       return;
     }
 
@@ -513,8 +560,8 @@ export default class Route {
     req.context.timings.boardcastData = req.context.timer.interval;
     Logging.logTimer('_boardcastData:start', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
 
-    if (this.verb === Constants.Verbs.GET || this.verb === Constants.Verbs.SEARCH) {
-      Logging.logTimer('_boardcastData:end-get', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+    if (isReadVerb(this.verb)) {
+      Logging.logTimer('_boardcastData:end-read', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
       return;
     }
 
@@ -579,6 +626,8 @@ export default class Route {
             isCoreSchema: this.core,
             schemaName: this.schemaName || '',
             deletedEntities: isSuper ? undefined : req.context.deletedEntities,
+            dataShareId: req.context.dataShareId,
+            dataShareIds: req.context.dataShareIds,
           } satisfies RESTActivity),
         );
       } else {
@@ -587,13 +636,28 @@ export default class Route {
     };
 
     if (isReadStream) {
-      result.on('data', (data: unknown) => emit(Helpers.Schema.prepareSchemaResult(data, dataApp.id ?? null)));
+      result.on('data', (data: unknown) =>
+        emit(this._withoutPrivate(Helpers.Schema.prepareSchemaResult(data, dataApp.id ?? null))),
+      );
       Logging.logTimer('_broadcast:end-stream', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
       return;
     }
 
-    emit(Helpers.Schema.prepareSchemaResult(result, dataApp.id ?? null));
+    emit(this._withoutPrivate(Helpers.Schema.prepareSchemaResult(result, dataApp.id ?? null)));
     Logging.logTimer('_broadcast:end', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+  }
+
+  /**
+   * A result without the schema's private properties, as a response gives it and its activity tells realtime listeners
+   * of it. An update's result is its changes, each to a path.
+   * @param {unknown} result
+   * @return {unknown}
+   */
+  _withoutPrivate(result: unknown): unknown {
+    if (this.verb === Route.Constants.Verbs.PUT && Array.isArray(result)) {
+      return Helpers.Schema.stripPrivateChanges(result, this._privatePaths);
+    }
+    return Helpers.Schema.stripPrivate(result, this._privatePaths);
   }
 
   /**
@@ -763,7 +827,7 @@ export default class Route {
    */
   async _findChangeOwners(req: Request): Promise<Map<string, string> | undefined> {
     if (this.appId || !this.schemaName) return undefined;
-    if (this.verb === Constants.Verbs.GET || this.verb === Constants.Verbs.SEARCH) return undefined;
+    if (isReadVerb(this.verb)) return undefined;
 
     const owners = new Map<string, string>();
     const recordIds = this._changedRecordIds(req);
@@ -827,7 +891,12 @@ export default class Route {
         return reject(Helpers.Errors.unauthorised('missing_token', 'A token is required'));
       }
 
-      if (this.authType && authTypeIdx(req.context.token.type) < authTypeIdx(this.authType)) {
+      if (!isKnownAuthType(this.authType)) {
+        this.log(`EAUTH: UNKNOWN AUTH TYPE ${String(this.authType)}`, Logging.Constants.LogLevel.ERR, req.context.id);
+        return reject(Helpers.Errors.internal(`Route ${this.name} has an unknown auth type: ${String(this.authType)}`));
+      }
+
+      if (authTypeIdx(req.context.token.type) < authTypeIdx(this.authType)) {
         this.log(
           `EAUTH: INSUFFICIENT AUTHORITY ${req.context.token.type} is not equal to ${this.authType}`,
           Logging.Constants.LogLevel.ERR,

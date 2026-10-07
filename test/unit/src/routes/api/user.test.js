@@ -21,7 +21,7 @@ import { Readable } from 'stream';
 
 import UserRoutes from '../../../../../dist/routes/api/user.js';
 import Model from '../../../../../dist/model/index.js';
-import UserSchemaModel from '../../../../../dist/model/core/user.js';
+import UserSchemaModel, { userAlreadyExists } from '../../../../../dist/model/core/user.js';
 import TokenSchemaModel from '../../../../../dist/model/core/token.js';
 import AppSchemaModel from '../../../../../dist/model/core/app.js';
 import ActivitySchemaModel from '../../../../../dist/model/core/activity.js';
@@ -327,6 +327,31 @@ describe('routes/api/user:CreateUserAuthToken', () => {
     });
   });
 
+  // SR-DPC-001 S14: the caller gives the token's domains and policy properties, and nothing else
+  it('makes the token from its domains and policy properties alone', async () => {
+    stubModel({ user: { findOne: async () => ({ id: '6abd01000000000000000001' }) } });
+    const route = createRoute(CreateUserAuthToken);
+    const body = {
+      id: '6abd02000000000000000009',
+      type: 'system',
+      value: 'chosen-value',
+      permissions: [{ route: 'app', permission: '*' }],
+      tags: ['chosen'],
+      _appId: '6abd05000000000000000009',
+      domains: ['app.example.com'],
+      policyProperties: {},
+    };
+
+    const validate = await route._validate(createReq({ params: { id: '6abd01000000000000000001' }, body }));
+
+    assert.deepStrictEqual(validate.token, {
+      type: 'user',
+      permissions: [{ route: '*', permission: '*' }],
+      domains: ['app.example.com'],
+      policyProperties: {},
+    });
+  });
+
   it('adds a token scoped to the app and user, then busts the route cache', async () => {
     // _exec() converts appId/user.id via the real Datastore ObjectId adapter (not routed through
     // Model.getCoreModel), so these need to look like real 24-char hex ids.
@@ -334,13 +359,15 @@ describe('routes/api/user:CreateUserAuthToken', () => {
     const nrp = { emit: sinon.spy() };
     const route = createRoute(CreateUserAuthToken, { nrp });
 
+    const token = { type: 'user', permissions: [{ route: '*', permission: '*' }], domains: ['*'], policyProperties: {} };
     const result = await route._exec(
-      createReq({ body: { policyProperties: {}, domains: ['*'] } }),
+      createReq({ body: { id: HEX_ID, policyProperties: {}, domains: ['*'] } }),
       {},
-      { appId: HEX_ID, user: { id: HEX_ID } },
+      { appId: HEX_ID, user: { id: HEX_ID }, token },
     );
 
     assert.ok(tokenModel.add.calledOnce);
+    assert.strictEqual(tokenModel.add.firstCall.args[0], token);
     assert.strictEqual(result.value, 'token-value');
     assert.ok(nrp.emit.calledWith('app-routes:bust-cache', '{}'));
   });
@@ -397,6 +424,29 @@ describe('routes/api/user:AddUser', () => {
     const body = { auth: [{ app: 'google', appId: 'ext-1', email: 'a@b.com' }] };
 
     await assert.rejects(route._validate(createReq({ body })), { code: 'user_already_exists_with_that_name' });
+  });
+
+  it('looks only for the id or email an auth entry gives, as an empty one would match every entry without one', async () => {
+    const findOne = sinon.stub().resolves(null);
+    stubModel({ user: { findOne } });
+    const route = createRoute(AddUser);
+    const body = { auth: [{ app: 'local', appId: '', email: '' }, { app: 'google', appId: 'ext-1', email: '' }] };
+
+    await route._validate(createReq({ body }));
+
+    assert.strictEqual(findOne.callCount, 1);
+    // Within the caller's app, which the scoped model adds again
+    assert.deepStrictEqual(findOne.firstCall.args[0].$and[0].auth, { $elemMatch: { app: 'google', $or: [{ appId: 'ext-1' }] } });
+  });
+
+  it('refuses the user when the model finds another stored with the same auth since it looked', async () => {
+    stubModel({ user: { add: sinon.stub().rejects(userAlreadyExists()) } });
+    const route = createRoute(AddUser);
+
+    await assert.rejects(route._exec(createReq({ body: { auth: [{ app: 'google', appId: 'ext-1' }] } }), {}, { appId: HEX_ID }), {
+      status: 400,
+      code: 'user_already_exists_with_that_name',
+    });
   });
 
   for (const domains of [[null], ['app.example.com', {}], null]) {
@@ -564,8 +614,11 @@ describe('routes/api/user:DeleteUser', () => {
     await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), { code: 'not_found' });
   });
 
+  // The user's tokens, found anew for each look, as the datastore would stream them
+  const tokensOf = (tokens) => sinon.stub().callsFake(() => Readable.from(tokens, { objectMode: true }));
+
   it('rejects when the user has no token', async () => {
-    stubModel({ user: { findOne: async () => ({ id: '6abd01000000000000000001' }) }, token: { findOne: async () => null } });
+    stubModel({ user: { findOne: async () => ({ id: '6abd01000000000000000001' }) }, token: { find: tokensOf([]) } });
     const route = createRoute(DeleteUser);
 
     await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), { code: 'not_found' });
@@ -574,7 +627,7 @@ describe('routes/api/user:DeleteUser', () => {
   it('rejects when the requesting token belongs to the user being deleted', async () => {
     stubModel({
       user: { findOne: async () => ({ id: '6abd01000000000000000001' }) },
-      token: { findOne: async () => ({ value: 'same-token' }) },
+      token: { find: tokensOf([{ value: 'same-token' }]) },
     });
     const route = createRoute(DeleteUser);
     const req = createReq({ params: { id: HEX_ID }, token: { type: 'user', value: 'same-token' } });
@@ -582,15 +635,38 @@ describe('routes/api/user:DeleteUser', () => {
     await assert.rejects(route._validate(req), { code: 'user_can_not_delete_itself' });
   });
 
-  it('removes the user and their token', async () => {
-    const { userModel, tokenModel } = stubModel();
+  // SR-DPC-001 S10: a user's later tokens are theirs too
+  it("rejects when the requesting token is any of the user's tokens, not only the first", async () => {
+    stubModel({
+      user: { findOne: async () => ({ id: '6abd01000000000000000001' }) },
+      token: { find: tokensOf([{ value: 'first-token' }, { value: 'same-token' }]) },
+    });
     const route = createRoute(DeleteUser);
-    const validate = { user: { id: '6abd01000000000000000001' }, token: { id: '6abd02000000000000000001' } };
+    const req = createReq({ params: { id: HEX_ID }, token: { type: 'user', value: 'same-token' } });
 
-    const result = await route._exec(createReq(), {}, validate);
+    await assert.rejects(route._validate(req), { code: 'user_can_not_delete_itself' });
+  });
+
+  it('returns every one of the user\'s tokens to remove', async () => {
+    const tokens = [{ id: '6abd02000000000000000001', value: 'a' }, { id: '6abd02000000000000000002', value: 'b' }];
+    stubModel({ user: { findOne: async () => ({ id: '6abd01000000000000000001' }) }, token: { find: tokensOf(tokens) } });
+    const route = createRoute(DeleteUser);
+    const req = createReq({ params: { id: HEX_ID }, token: { type: 'lambda', value: 'caller-token' } });
+
+    const validate = await route._validate(req);
+
+    assert.deepStrictEqual(validate.tokens, tokens);
+  });
+
+  it('removes the user and every one of their tokens', async () => {
+    const tokens = [{ id: '6abd02000000000000000001' }, { id: '6abd02000000000000000002' }];
+    const { userModel, tokenModel } = stubModel({ token: { find: tokensOf(tokens), rmBulk: sinon.stub().resolves() } });
+    const route = createRoute(DeleteUser);
+
+    const result = await route._exec(createReq(), {}, { user: { id: '6abd01000000000000000001' }, tokens });
 
     assert.ok(userModel.rm.calledWith('6abd01000000000000000001'));
-    assert.ok(tokenModel.rm.calledWith('6abd02000000000000000001'));
+    assert.ok(tokenModel.rmBulk.calledOnceWith(['6abd02000000000000000001', '6abd02000000000000000002']));
     assert.strictEqual(result, true);
   });
 });

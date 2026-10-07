@@ -20,7 +20,7 @@ import assert from 'assert';
 import UpdateOne from '../../../../../dist/routes/schema-routes/update-one.js';
 import StandardModel from '../../../../../dist/model/type/standard.js';
 import { ApiError } from '../../../../../dist/helpers/errors.js';
-import { createSchemaModel, newId } from '../../../../schema-model.js';
+import { createFederatedSchemaModel, createSchemaModel, newId } from '../../../../schema-model.js';
 
 // A real schema model, so the route and access control run the real parseQuery, over rows in memory
 const schema = {
@@ -149,5 +149,63 @@ describe('schema-routes/UpdateOne: refusal messages', () => {
 
   it('still names an invalid path', async () => {
     assert.match(await refusal({ path: 'nope', value: 'x' }), /^test-schema: Update path is invalid: nope/);
+  });
+});
+
+describe('schema-routes/UpdateOne: a collection with remotes', () => {
+  // agreement-1's partner names app-c, agreement-2's partner app, as its record's source, as when a partner names
+  // another partner's app
+  const createFederatedRoute = () => {
+    const own = [{ id: DOC_1, value: 'original' }];
+    const partner = [{ id: DOC_2, sourceId: 'app-c', value: 'original' }];
+    const { model, datastores } = createFederatedSchemaModel(
+      schema,
+      own,
+      { 'agreement-1': partner, 'agreement-2': [] },
+      { 'agreement-1': 'app-a', 'agreement-2': 'app-c' },
+    );
+    return { route: createRoute(model), own, partner, datastores };
+  };
+  const update = (id, sourceId) => ({
+    params: { id, ...(sourceId ? { sourceId } : {}) },
+    body: { path: 'value', value: 'updated' },
+    context: { id: 'req-1', ac: { policyConfigs: [{}] } },
+  });
+  const writesTo = (datastore) => datastore.calls.filter(([call]) => call !== 'find');
+
+  it("updates a partner's record through the agreement it was read through, whatever source it names", async () => {
+    const { route, partner, datastores } = createFederatedRoute();
+    const req = update(DOC_2, 'app-c');
+
+    await route._exec(req, {}, await route._validate(req, {}));
+
+    assert.strictEqual(partner[0].value, 'updated');
+    assert.deepStrictEqual(writesTo(datastores['agreement-2']), []);
+    assert.strictEqual(req.context.dataShareId, 'agreement-1');
+  });
+
+  it("updates a partner's record without the request naming its source", async () => {
+    const { route, partner } = createFederatedRoute();
+    const req = update(DOC_2);
+
+    await route._exec(req, {}, await route._validate(req, {}));
+
+    assert.strictEqual(partner[0].value, 'updated');
+  });
+
+  it("updates the app's own record locally", async () => {
+    const { route, own, partner } = createFederatedRoute();
+    const req = update(DOC_1);
+
+    await route._exec(req, {}, await route._validate(req, {}));
+
+    assert.deepStrictEqual([own[0].value, partner[0].value], ['updated', 'original']);
+    assert.strictEqual(req.context.dataShareId, undefined);
+  });
+
+  it('finds no record from a source none of them names', async () => {
+    const { route } = createFederatedRoute();
+
+    await assert.rejects(() => route._validate(update(DOC_2, 'app-x'), {}), { status: 404, code: 'not_found' });
   });
 });

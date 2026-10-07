@@ -24,7 +24,7 @@ import Logging from '../helpers/logging.js';
 import * as Helpers from '../helpers/index.js';
 import AccessControl from '../access-control/index.js';
 import Model from '../model/index.js';
-import Route from './route.js';
+import Route, { isKnownAuthType, routerMethods } from './route.js';
 
 import { Services } from '../bootstrap.js';
 
@@ -366,6 +366,10 @@ class Routes {
     if (!app) throw new Error(`Expected app object to be passed through to _generateAppRoutes, got ${app}`);
     if (!app.__schema) return;
 
+    // An app whose stored schema can't be read gets no routes, rather than stopping the apps after it getting theirs
+    const schemas = Helpers.Schema.decodeStored(app);
+    if (!schemas) return;
+
     // Get DS agreements
     const appDSAs = await Helpers.streamAll<AppDataSharing>(
       await Model.getCoreModel(AppDataSharingSchemaModel).find({
@@ -375,7 +379,7 @@ class Routes {
 
     const appRouter = this._createRouter();
 
-    Helpers.Schema.decode(app.__schema)
+    schemas
       .filter((schema) => schema.type.indexOf('collection') === 0)
       .filter((schema) => {
         if (!schema.remotes) return true;
@@ -427,14 +431,26 @@ class Routes {
     const route = core
       ? new (routeClass as CoreRouteClass)(this._services)
       : new (routeClass as PluginRouteClass)(null, null, this._services);
+    this._reportUnknownAuthType(route);
     route.paths.forEach((pathSpec) => {
       const routePath = path.join(...[Config.app.apiPrefix, pathPrefix, pathSpec]);
-      Logging.logSilly(`_initRoute:register [${route.verb.toUpperCase()}] ${routePath}`);
-      app[route.verb](routePath, this._preRouteMiddleware, (req: Request, res: Response, next: NextFunction) => {
-        req.context.pathSpec = pathSpec;
-        return route.exec(req, res, next).catch(next);
+      routerMethods(route.verb).forEach((method) => {
+        Logging.logSilly(`_initRoute:register [${method.toUpperCase()}] ${routePath}`);
+        app[method](routePath, this._preRouteMiddleware, (req: Request, res: Response, next: NextFunction) => {
+          req.context.pathSpec = pathSpec;
+          return route.exec(req, res, next).catch(next);
+        });
       });
     });
+  }
+
+  // A route whose auth type isn't a known one refuses every request (Route._authenticate), so say so as it's set up
+  _reportUnknownAuthType(route: Route) {
+    if (isKnownAuthType(route.authType)) return;
+
+    Logging.logError(
+      `Route ${route.name} has an unknown auth type ${String(route.authType)}, it refuses every request`,
+    );
   }
 
   /**
@@ -454,13 +470,16 @@ class Routes {
         throw err;
       }
 
+      this._reportUnknownAuthType(route);
       route.paths.forEach((pathSpec) => {
         let routePath = path.join(...[app.apiPath, Config.app.apiPrefix, pathSpec]);
         if (routePath.indexOf('/') !== 0) routePath = `/${routePath}`;
-        Logging.logSilly(`_initSchemaRoutes:register [${route.verb.toUpperCase()}] ${routePath}`);
-        express[route.verb](routePath, this._preRouteMiddleware, (req: Request, res: Response, next: NextFunction) => {
-          req.context.pathSpec = pathSpec;
-          return route.exec(req, res, next).catch(next);
+        routerMethods(route.verb).forEach((method) => {
+          Logging.logSilly(`_initSchemaRoutes:register [${method.toUpperCase()}] ${routePath}`);
+          express[method](routePath, this._preRouteMiddleware, (req: Request, res: Response, next: NextFunction) => {
+            req.context.pathSpec = pathSpec;
+            return route.exec(req, res, next).catch(next);
+          });
         });
       });
     });

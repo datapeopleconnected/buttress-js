@@ -20,7 +20,7 @@ import sinon from 'sinon';
 
 import DeleteOne from '../../../../../dist/routes/schema-routes/delete-one.js';
 import { ApiError } from '../../../../../dist/helpers/errors.js';
-import { createSchemaModel, newId } from '../../../../schema-model.js';
+import { createFederatedSchemaModel, createSchemaModel, newId } from '../../../../schema-model.js';
 
 // A real schema model, so the route and access control run the real parseQuery, over rows in memory
 const schema = {
@@ -137,5 +137,27 @@ describe('schema-routes/DeleteOne', () => {
       docs.some((d) => d.id === DOC_2),
       'entity outside the access-control scope must not be deleted',
     );
+  });
+});
+
+describe('schema-routes/DeleteOne: a collection with remotes', () => {
+  // agreement-1's partner names app-c, agreement-2's partner app, as its record's source, as when a partner names
+  // another partner's app
+  it("deletes a partner's record through the agreement it was read through, whatever source it names", async () => {
+    const partner = [{ id: DOC_2, sourceId: 'app-c' }];
+    const { model, datastores } = createFederatedSchemaModel(
+      schema,
+      [{ id: DOC_1 }],
+      { 'agreement-1': partner, 'agreement-2': [] },
+      { 'agreement-1': 'app-a', 'agreement-2': 'app-c' },
+    );
+    const route = createRoute(model);
+    const req = { params: { id: DOC_2 }, context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
+
+    await route._exec(req, {}, await route._validate(req, {}));
+
+    assert.deepStrictEqual(partner, []);
+    assert.deepStrictEqual(datastores['agreement-2'].calls.filter(([call]) => call !== 'find'), []);
+    assert.deepStrictEqual(datastores.local.rows.map((row) => row.id), [DOC_1]);
   });
 });

@@ -25,6 +25,7 @@ import AppSchemaModel from '../../../../../dist/model/core/app.js';
 import TokenSchemaModel from '../../../../../dist/model/core/token.js';
 import ActivitySchemaModel from '../../../../../dist/model/core/activity.js';
 import { ApiError } from '../../../../../dist/helpers/errors.js';
+import Logging from '../../../../../dist/helpers/logging.js';
 
 import { realQueryParser } from '../../../../query-parser.js';
 
@@ -360,6 +361,22 @@ describe('routes/api/app:DeleteAllApps', () => {
     assert.ok(appModel.rm.calledWith(regularApp));
   });
 
+  it('removes each app with its api path, so the REST workers are told which routes to drop', async () => {
+    const stored = [{ id: 'regular-app', _tokenId: 'regular-token', apiPath: 'regular', name: 'Regular' }];
+    const { appModel, tokenModel } = stubModel();
+    tokenModel.find.returns(Readable.from([{ _appId: 'system-app' }], { objectMode: true }));
+    // The rows as the datastore gives them, with only the properties the projection asks for
+    appModel.find.callsFake((_query, _excludes, _limit, _skip, _sort, project) => Readable.from(
+      stored.map((row) => Object.fromEntries(Object.keys(project).map((key) => [key, row[key]]))),
+      { objectMode: true },
+    ));
+
+    const route = createRoute(DeleteAllApps);
+    await route._exec(createReq(), {}, true);
+
+    assert.deepStrictEqual(appModel.rm.firstCall.args[0], { id: 'regular-app', _tokenId: 'regular-token', apiPath: 'regular' });
+  });
+
   it('does not delete an app that belongs to a system token even if returned by the query', async () => {
     const systemAppId = 'system-app';
     const systemOwnedApp = { id: { toString: () => systemAppId } };
@@ -533,6 +550,22 @@ describe('routes/api/app:GetAppPolicyPropertyList', () => {
 
     assert.deepStrictEqual(result, { role: ['admin'] });
   });
+
+  it('answers an api path no app has as not found, not as a server error', async () => {
+    stubModel({ app: { findOne: async () => null } });
+    const route = createRoute(GetAppPolicyPropertyList);
+    const req = createReq({
+      authApp: { id: '6abd05000000000000000001', apiPath: 'app-one' },
+      params: { apiPath: 'no-such-app' },
+      token: { type: 'system' },
+    });
+
+    await assert.rejects(async () => route._exec(req, {}, await route._validate(req)), {
+      status: 404,
+      code: 'not_found',
+      details: { schema: 'app', apiPath: 'no-such-app' },
+    });
+  });
 });
 
 describe('routes/api/app:SetAppPolicyPropertyList', () => {
@@ -569,6 +602,54 @@ describe('routes/api/app:SetAppPolicyPropertyList', () => {
     await route._validate(req);
 
     assert.deepStrictEqual(req.body.role.sort(), ['admin', 'user']);
+  });
+
+  it('sets the list of the app a system token names, merged into that app’s list rather than its own', async () => {
+    const otherApp = { id: '6abd05000000000000000002', policyPropertiesList: { role: ['admin'] } };
+    const { appModel } = stubModel({ app: { findById: async (id) => (id === otherApp.id ? otherApp : null) } });
+    const route = createRoute(SetAppPolicyPropertyList);
+    const req = createReq({
+      params: { update: 'true', appId: otherApp.id },
+      authApp: { id: '6abd05000000000000000001', policyPropertiesList: { role: ['own'], grade: ['A'] } },
+      token: { type: 'system' },
+      body: { role: ['user'] },
+    });
+
+    const validate = await route._validate(req);
+    await route._exec(req, {}, validate);
+
+    assert.deepStrictEqual(validate, { appId: otherApp.id });
+    assert.deepStrictEqual(req.body.role.sort(), ['admin', 'user']);
+    assert.strictEqual('grade' in req.body, false);
+    assert.ok(appModel.setPolicyPropertiesList.calledOnceWith(otherApp.id));
+  });
+
+  it('refuses a system token naming an app that does not exist', async () => {
+    const { appModel } = stubModel();
+    const route = createRoute(SetAppPolicyPropertyList);
+    const req = createReq({ params: { update: 'true', appId: '6abd05000000000000000009' }, token: { type: 'system' } });
+
+    await assert.rejects(route._validate(req), { status: 404, code: 'not_found' });
+    assert.strictEqual(appModel.setPolicyPropertiesList.called, false);
+  });
+
+  it('answers a token that is not a system token naming another app as naming an unknown one', async () => {
+    const otherApp = { id: '6abd05000000000000000002', policyPropertiesList: { role: ['admin'] } };
+    stubModel({ app: { findById: async () => otherApp, findOne: async () => otherApp } });
+    const route = createRoute(SetAppPolicyPropertyList);
+
+    for (const type of ['app', 'user']) {
+      const req = createReq({ params: { update: 'true', appId: otherApp.id }, token: { type }, body: { role: ['user'] } });
+      await assert.rejects(route._validate(req), { status: 404, code: 'not_found' }, type);
+    }
+  });
+
+  it('still sets its own list for a token naming its own app', async () => {
+    stubModel();
+    const route = createRoute(SetAppPolicyPropertyList);
+    const req = createReq({ params: { update: 'false', appId: '6abd05000000000000000001' }, token: { type: 'app' } });
+
+    assert.deepStrictEqual(await route._validate(req), { appId: '6abd05000000000000000001' });
   });
 
   it('persists the update, stripping any stray query key', async () => {
@@ -617,7 +698,56 @@ describe('routes/api/app:GetAppSchema ?core=', () => {
   });
 });
 
+describe("routes/api/app:GetAppSchema a stored schema that can't be read", () => {
+  const car = { name: 'car', type: 'collection', properties: {} };
+  const schemaOf = (authApp, query = {}) =>
+    createRoute(GetAppSchema)._validate({ query, context: { id: 'req-1', authApp } }, {});
+
+  for (const [label, stored] of [
+    ["isn't JSON", '[{"name": "car", '],
+    ["isn't a list", JSON.stringify(car)],
+    ['holds null', JSON.stringify([car, null])],
+  ]) {
+    it(`answers a 500 for an app whose stored schema ${label}, logging the app`, async () => {
+      const warn = sinon.stub(Logging, 'logWarn');
+
+      await assert.rejects(schemaOf({ id: 'app-2', __schema: stored }), { status: 500, code: 'internal_error' });
+      sinon.assert.calledOnceWithMatch(warn, 'app-2');
+    });
+
+    it(`answers a 500 for ?rawSchema of an app whose stored raw schema ${label}, logging the app`, async () => {
+      const warn = sinon.stub(Logging, 'logWarn');
+      const authApp = { id: 'app-2', __schema: JSON.stringify([car]), __rawSchema: stored };
+
+      await assert.rejects(schemaOf(authApp, { rawSchema: 'true' }), { status: 500, code: 'internal_error' });
+      sinon.assert.calledOnceWithMatch(warn, 'app-2');
+    });
+  }
+
+  it('gives back a stored raw schema it can read, as it was given', async () => {
+    const authApp = { id: 'app-1', __schema: '[]', __rawSchema: JSON.stringify([car]) };
+
+    assert.deepStrictEqual(await schemaOf(authApp, { rawSchema: 'true' }), [car]);
+  });
+});
+
 describe('routes/api/app:UpdateAppSchema', () => {
+  it('saves a schema that leaves its properties out, named like a local schema, with the local properties', async () => {
+    stubModel();
+    const route = createRoute(UpdateAppSchema);
+    const localSchema = [{ name: 'note', type: 'collection', properties: { text: { __type: 'string' } } }];
+    route.scoped = () => ({
+      owned: async () => ({ localSchema, mergeRemoteSchema: async (_req, schemas) => schemas }),
+    });
+
+    const { compiledSchema } = await route._validate(createReq({ body: [{ name: 'note', type: 'collection' }] }));
+
+    assert.deepStrictEqual(
+      compiledSchema.map((schema) => [schema.name, Object.keys(schema.properties)]),
+      [['note', ['text', 'id', 'sourceId']]],
+    );
+  });
+
   it('refuses a schema whose property definitions are wrong, listing each problem, before saving anything', async () => {
     const { appModel } = stubModel();
     const route = createRoute(UpdateAppSchema);

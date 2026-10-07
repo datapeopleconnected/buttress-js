@@ -18,6 +18,7 @@ import { describe, it } from 'mocha';
 import assert from 'assert';
 
 import FilterInstance, { Filter as FilterClass } from '../../../../dist/access-control/filter.js';
+import { createSchemaModel } from '../../../schema-model.js';
 
 const Filter = FilterInstance;
 
@@ -154,25 +155,158 @@ describe('access-control/filter:buildPolicyQuery env references that are not set
     }
   });
 
+  // The operator names are looked up as names, not as Object.prototype's properties
+  it('reads a field named after one of an object\'s own properties as a field', async () => {
+    assert.deepStrictEqual(await Filter.buildPolicyQuery({ constructor: { '@eq': '#env.ownerId' } }, env), {
+      constructor: { $eq: 'owner-1' },
+    });
+  });
+
+  // Every operator was dropped but the first, so a range kept only its first bound
+  it("keeps every operator a field is given, each with its env read", async () => {
+    assert.deepStrictEqual(await Filter.buildPolicyQuery({ age: { '@gte': 18, '@lt': 65 } }, env), {
+      age: { $gte: 18, $lt: 65 },
+    });
+    assert.deepStrictEqual(await Filter.buildPolicyQuery({ ownerId: { '@ne': 'x', '@in': ['#env.ownerId'] } }, env), {
+      ownerId: { $ne: 'x', $in: ['owner-1'] },
+    });
+    assert.deepStrictEqual(await Filter.buildPolicyQuery({ ownerId: { '@exists': true, '@eq': '#env.ownerId' } }, env), {
+      ownerId: { $exists: true, $eq: 'owner-1' },
+    });
+  });
+
+  it('reads the env in a query of @nor, as in @and and @or', async () => {
+    assert.deepStrictEqual(await Filter.buildPolicyQuery({ '@nor': [{ ownerId: '#env.ownerId' }] }, env), {
+      $nor: [{ ownerId: 'owner-1' }],
+    });
+  });
+
   it('builds a query whose #env references are set, even to null', async () => {
     assert.deepStrictEqual(await Filter.buildPolicyQuery({ ownerId: '#env.ownerId' }, env), { ownerId: 'owner-1' });
     assert.deepStrictEqual(await Filter.buildPolicyQuery({ userId: { '@eq': '#env.user' } }, env), {
       userId: { $eq: null },
     });
   });
+});
 
-  it("drops a policy config whose query can't be built, keeping the others", async () => {
-    const config = (query) => ({ id: 'p', name: 'p', env: null, appId: 'app-1', config: { query } });
+// A list operand's #env references were left as their text, so the query compared '#env.user.id' and read less than
+// its author meant
+describe('access-control/filter:buildPolicyQuery #env references in a list', () => {
+  const env = { date: { now: '2025-06-01T00:00:00.000Z' }, user: { id: 'u1', altId: 'u2' }, appId: 'app-1', team: 't1' };
 
-    const built = await Filter.buildApplicablePoliciesQuery(
-      [config({ ownerId: '#env.user.id' }), config({ ownerId: '#env.ownerId' })],
-      env,
-    );
-
+  it("reads each #env item of a list operand, keeping the others as they're given", async () => {
     assert.deepStrictEqual(
-      built.map((p) => p.config.query),
-      [{ ownerId: 'owner-1' }],
+      await Filter.buildPolicyQuery({ owner: { '@in': ['#env.user.id', '#env.user.altId', 'u3'] } }, env),
+      { owner: { $in: ['u1', 'u2', 'u3'] } },
     );
+    assert.deepStrictEqual(await Filter.buildPolicyQuery({ owner: { '@nin': ['#env.user.id'] } }, env), {
+      owner: { $nin: ['u1'] },
+    });
+    assert.deepStrictEqual(await Filter.buildPolicyQuery({ tags: { '@all': ['#env.team', 'x'] } }, env), {
+      tags: { $all: ['t1', 'x'] },
+    });
+  });
+
+  it('reads the items of a list in a logical operator\'s queries', async () => {
+    assert.deepStrictEqual(
+      await Filter.buildPolicyQuery({ '@or': [{ owner: { '@in': ['#env.user.id'] } }, { editor: '#env.user.altId' }] }, env),
+      { $or: [{ owner: { $in: ['u1'] } }, { editor: 'u2' }] },
+    );
+  });
+
+  // A list given as a value was read as an object of operators, so ['a', 'b'] became {0: 'a', 1: 'b'}
+  it('keeps a list given as a value a list, its #env items read', async () => {
+    assert.deepStrictEqual(await Filter.buildPolicyQuery({ tags: ['a', 'b'] }, env), { tags: ['a', 'b'] });
+    assert.deepStrictEqual(await Filter.buildPolicyQuery({ tags: ['#env.team', 'b'] }, env), { tags: ['t1', 'b'] });
+  });
+
+  // As a value that isn't set does: dropping the item instead would let a @nin read more
+  it("refuses a query when an #env item of a list isn't set", async () => {
+    for (const query of [
+      { owner: { '@in': ['#env.user.id', '#env.user.nickname'] } },
+      { owner: { '@nin': ['#env.misspelt'] } },
+      { tags: ['#env.misspelt'] },
+      { '@and': [{ owner: { '@in': ['#env.user.nickname'] } }] },
+    ]) {
+      await assert.rejects(Filter.buildPolicyQuery(query, env), { name: 'UnresolvedEnvError' }, JSON.stringify(query));
+    }
+  });
+});
+
+// An $elMatch's object was passed through whole, so its #env values were compared as their text
+describe('access-control/filter:buildPolicyQuery #env references in an @elMatch', () => {
+  const env = { date: { now: '2025-06-01T00:00:00.000Z' }, user: { id: 'u1' }, appId: 'app-1', sku: 'X', min: 5 };
+
+  it("reads the #env values of the query an item must match, its lists' and logical operators' included", async () => {
+    assert.deepStrictEqual(
+      await Filter.buildPolicyQuery({ lines: { '@elMatch': { sku: '#env.sku', qty: { '@gt': '#env.min' } } } }, env),
+      { lines: { $elMatch: { sku: 'X', qty: { $gt: 5 } } } },
+    );
+    assert.deepStrictEqual(
+      await Filter.buildPolicyQuery(
+        { lines: { '@elMatch': { '@or': [{ owner: { '@in': ['#env.user.id', 'u9'] } }, { sku: '#env.sku' }] } } },
+        env,
+      ),
+      { lines: { $elMatch: { $or: [{ owner: { $in: ['u1', 'u9'] } }, { sku: 'X' }] } } },
+    );
+  });
+
+  it('reads the #env values of the operators an item must pass, a nested @elMatch\'s included', async () => {
+    assert.deepStrictEqual(
+      await Filter.buildPolicyQuery({ scores: { '@elMatch': { '@gte': '#env.min', '@nin': ['#env.sku'] } } }, env),
+      { scores: { $elMatch: { $gte: 5, $nin: ['X'] } } },
+    );
+    assert.deepStrictEqual(
+      await Filter.buildPolicyQuery({ grid: { '@elMatch': { '@elMatch': { '@eq': '#env.min' } } } }, env),
+      { grid: { $elMatch: { $elMatch: { $eq: 5 } } } },
+    );
+  });
+
+  // In an item's query, access is one of the item's fields, not what the policy grants
+  it("keeps an item's access field", async () => {
+    assert.deepStrictEqual(
+      await Filter.buildPolicyQuery({ lines: { '@elMatch': { access: '%FULL_ACCESS%', sku: '#env.sku' } } }, env),
+      { lines: { $elMatch: { access: '%FULL_ACCESS%', sku: 'X' } } },
+    );
+  });
+
+  it("refuses a query when an #env value in an @elMatch isn't set, as one outside it is", async () => {
+    for (const query of [
+      { lines: { '@elMatch': { sku: '#env.misspelt' } } },
+      { lines: { '@elMatch': { owner: { '@in': ['#env.user.nickname'] } } } },
+      { scores: { '@elMatch': { '@gte': '#env.misspelt' } } },
+    ]) {
+      await assert.rejects(Filter.buildPolicyQuery(query, env), { name: 'UnresolvedEnvError' }, JSON.stringify(query));
+    }
+  });
+
+  it("refuses an @elMatch whose query has a logical operator without a list of queries", async () => {
+    await assert.rejects(
+      Filter.buildPolicyQuery({ lines: { '@elMatch': { '@or': { sku: 'X' } } } }, env),
+      { name: 'InvalidPolicyQueryError' },
+    );
+  });
+});
+
+// A logical operator takes a list of one or more queries; a query with one that hasn't can't be read, so its config
+// grants nothing, rather than the operator being dropped and the query reading every entity
+describe('access-control/filter:buildPolicyQuery a logical operator without a list of queries', () => {
+  for (const query of [
+    { '@or': { status: 'public' } },
+    { '@or': {} },
+    { '@or': [] },
+    { '@and': ['x'] },
+    { '@or': [null] },
+    { '@nor': 'x' },
+    { status: 'public', '@or': [{ owner: 'a' }, 5] },
+  ]) {
+    it(`refuses ${JSON.stringify(query)} as a query it can't read`, async () => {
+      await assert.rejects(Filter.buildPolicyQuery(query, {}), { name: 'InvalidPolicyQueryError' });
+    });
+  }
+
+  it('keeps an empty object or list given as a value, to be compared whole, rather than dropping it', async () => {
+    assert.deepStrictEqual(await Filter.buildPolicyQuery({ owner: {}, tags: [] }, {}), { owner: {}, tags: [] });
   });
 });
 
@@ -257,61 +391,64 @@ describe('access-control/filter:buildPolicyQuery', () => {
   });
 });
 
+// A model with no schema of its own, so its values are compared as given
+const { model: untyped } = createSchemaModel({ name: 'untyped', properties: {} });
+
 describe('access-control/filter:evaluateQueryAgainstEntity', () => {
   it('should return true for %FULL_ACCESS% query', () => {
-    const result = Filter.evaluateQueryAgainstEntity({ access: '%FULL_ACCESS%' }, { name: 'test' });
+    const result = Filter.evaluateQueryAgainstEntity({ access: '%FULL_ACCESS%' }, { name: 'test' }, untyped);
     assert.strictEqual(result, true);
   });
 
   it('should return true when entity matches simple $eq query', () => {
-    const result = Filter.evaluateQueryAgainstEntity({ name: { $eq: 'test' } }, { name: 'test' });
+    const result = Filter.evaluateQueryAgainstEntity({ name: { $eq: 'test' } }, { name: 'test' }, untyped);
     assert.strictEqual(result, true);
   });
 
   it('should return false when entity does not match $eq query', () => {
-    const result = Filter.evaluateQueryAgainstEntity({ name: { $eq: 'other' } }, { name: 'test' });
+    const result = Filter.evaluateQueryAgainstEntity({ name: { $eq: 'other' } }, { name: 'test' }, untyped);
     assert.strictEqual(result, false);
   });
 
   it('should return true when entity matches $and query', () => {
     const query = { $and: [{ age: { $gt: 18 } }, { country: { $eq: 'USA' } }] };
     const entity = { age: 25, country: 'USA' };
-    const result = Filter.evaluateQueryAgainstEntity(query, entity);
+    const result = Filter.evaluateQueryAgainstEntity(query, entity, untyped);
     assert.strictEqual(result, true);
   });
 
   it('should return false when entity fails $and query', () => {
     const query = { $and: [{ age: { $gt: 18 } }, { country: { $eq: 'USA' } }] };
     const entity = { age: 15, country: 'USA' };
-    const result = Filter.evaluateQueryAgainstEntity(query, entity);
+    const result = Filter.evaluateQueryAgainstEntity(query, entity, untyped);
     assert.strictEqual(result, false);
   });
 
   it('should return true when entity matches $or query', () => {
     const query = { $or: [{ age: { $gt: 18 } }, { role: { $eq: 'admin' } }] };
     const entity = { age: 15, role: 'admin' };
-    const result = Filter.evaluateQueryAgainstEntity(query, entity);
+    const result = Filter.evaluateQueryAgainstEntity(query, entity, untyped);
     assert.strictEqual(result, true);
   });
 
   it('should return false when entity fails $or query', () => {
     const query = { $or: [{ age: { $gt: 18 } }, { role: { $eq: 'admin' } }] };
     const entity = { age: 15, role: 'user' };
-    const result = Filter.evaluateQueryAgainstEntity(query, entity);
+    const result = Filter.evaluateQueryAgainstEntity(query, entity, untyped);
     assert.strictEqual(result, false);
   });
 
-  it('should handle nested/flattened entity fields', () => {
-    const entity = { 'address.city': 'London', name: 'test' };
+  it('should handle nested entity fields', () => {
+    const entity = { address: { city: 'London' }, name: 'test' };
     const query = { 'address.city': { $eq: 'London' } };
-    const result = Filter.evaluateQueryAgainstEntity(query, entity);
+    const result = Filter.evaluateQueryAgainstEntity(query, entity, untyped);
     assert.strictEqual(result, true);
   });
 
   it('should return false when query field is missing from entity', () => {
     const entity = { name: 'test' };
     const query = { missingField: { $eq: 'value' } };
-    const result = Filter.evaluateQueryAgainstEntity(query, entity);
+    const result = Filter.evaluateQueryAgainstEntity(query, entity, untyped);
     assert.strictEqual(result, false);
   });
 });
@@ -322,12 +459,77 @@ describe('access-control/filter:evaluateQueryAgainstEntity $or branches', () => 
   };
 
   it('needs every field of a branch to match, as MongoDB does', () => {
-    assert.strictEqual(Filter.evaluateQueryAgainstEntity(query, { _teamId: 'T9', visibility: 'shared', _ownerId: 'U9' }), false);
-    assert.strictEqual(Filter.evaluateQueryAgainstEntity(query, { _teamId: 'T1', visibility: 'private', _ownerId: 'U9' }), false);
+    assert.strictEqual(Filter.evaluateQueryAgainstEntity(query, { _teamId: 'T9', visibility: 'shared', _ownerId: 'U9' }, untyped), false);
+    assert.strictEqual(Filter.evaluateQueryAgainstEntity(query, { _teamId: 'T1', visibility: 'private', _ownerId: 'U9' }, untyped), false);
   });
 
   it('matches when one branch matches in full', () => {
-    assert.strictEqual(Filter.evaluateQueryAgainstEntity(query, { _teamId: 'T1', visibility: 'shared', _ownerId: 'U9' }), true);
-    assert.strictEqual(Filter.evaluateQueryAgainstEntity(query, { _teamId: 'T9', visibility: 'private', _ownerId: 'U1' }), true);
+    assert.strictEqual(Filter.evaluateQueryAgainstEntity(query, { _teamId: 'T1', visibility: 'shared', _ownerId: 'U9' }, untyped), true);
+    assert.strictEqual(Filter.evaluateQueryAgainstEntity(query, { _teamId: 'T9', visibility: 'private', _ownerId: 'U1' }, untyped), true);
+  });
+});
+
+// Realtime reads an entity as a REST query would (D-31): the query parsed as REST parses it, and matched as MongoDB
+// matches it (see test/e2e/access-control/operators.test.js)
+describe('access-control/filter:evaluateQueryAgainstEntity as REST reads the entity', () => {
+  const { model } = createSchemaModel({
+    name: 'crate',
+    properties: {
+      name: { __type: 'string' },
+      count: { __type: 'number' },
+      at: { __type: 'date' },
+      tags: { __type: 'array', __itemtype: 'string' },
+      lines: { __type: 'array', __schema: { sku: { __type: 'string' }, qty: { __type: 'number' } } },
+    },
+  });
+  const entity = { id: '6abd0b000000000000000001', name: 'Ada', count: 10, at: '2026-03-01T00:00:00.000Z', tags: ['a', 'b'], lines: [{ sku: 'X', qty: 7 }] };
+  const reads = (query) => Filter.evaluateQueryAgainstEntity(query, entity, model);
+
+  it('compares text exactly', () => {
+    assert.strictEqual(reads({ name: { $eq: 'Ada' } }), true);
+    assert.strictEqual(reads({ name: { $eq: 'ada' } }), false);
+  });
+
+  it('takes a bare value as the value to equal', () => {
+    assert.strictEqual(reads({ name: 'Ada' }), true);
+    assert.strictEqual(reads({ name: 'Bob' }), false);
+  });
+
+  it("matches an array field by any of its items", () => {
+    assert.strictEqual(reads({ tags: 'b' }), true);
+    assert.strictEqual(reads({ tags: { $in: ['a', 'z'] } }), true);
+    assert.strictEqual(reads({ tags: { $nin: ['b'] } }), false);
+  });
+
+  it('reads $exists as whether the field is there', () => {
+    assert.strictEqual(reads({ name: { $exists: true } }), true);
+    assert.strictEqual(reads({ nothing: { $exists: false } }), true);
+    assert.strictEqual(reads({ nothing: { $exists: true } }), false);
+  });
+
+  it("matches a field it hasn't got by $ne and $nin", () => {
+    assert.strictEqual(reads({ nothing: { $ne: 'x' } }), true);
+    assert.strictEqual(reads({ nothing: { $nin: ['x'] } }), true);
+  });
+
+  it('matches $elMatch and $inProp', () => {
+    assert.strictEqual(reads({ lines: { $elMatch: { sku: 'X', qty: { $gt: 5 } } } }), true);
+    assert.strictEqual(reads({ name: { $inProp: 'd' } }), true);
+  });
+
+  it('reads compared values and dates as their types', () => {
+    assert.strictEqual(reads({ count: { $gt: '3' } }), true);
+    assert.strictEqual(reads({ at: { $gtDate: '2026-01-01T00:00:00.000Z' } }), true);
+    assert.strictEqual(reads({ at: { $ltDate: '2026-01-01T00:00:00.000Z' } }), false);
+  });
+
+  it("doesn't read the entity for a query that can't be read", () => {
+    assert.strictEqual(reads({ count: { $gt: 'lots' } }), false);
+  });
+
+  it('reads no entity for $all of an empty list, as MongoDB reads none', async () => {
+    assert.strictEqual(reads({ tags: { $all: [] } }), false);
+    // The list a policy's query takes from the env can be empty
+    assert.strictEqual(reads(await Filter.buildPolicyQuery({ tags: { '@all': '#env.user.tags' } }, { user: { tags: [] } })), false);
   });
 });

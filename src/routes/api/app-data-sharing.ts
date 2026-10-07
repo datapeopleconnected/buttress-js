@@ -26,26 +26,32 @@ import {
   CoreUpdateByPath,
 } from '../core-routes.js';
 import Model from '../../model/index.js';
-import { invalidEntityError } from '../../model/shared.js';
+import { invalidEntityError, invalidUpdateError } from '../../model/shared.js';
 import * as Helpers from '../../helpers/index.js';
 
 import Datastore from '../../datastore/index.js';
 import DatastoreFactory from '../../datastore/adapter-factory.js';
 
 import ButtressAdapater from '../../datastore/adapters/buttress.js';
+import ObjectIdHelper from '../../datastore/adapters/object-id.js';
 import TokenSchemaModel, { Token } from '../../model/core/token.js';
 import AppDataSharingSchemaModel, { AppDataSharing, AppDataSharingAddBody } from '../../model/core/app-data-sharing.js';
+import PolicySchemaModel from '../../model/core/policy.js';
 import { Services } from '../../bootstrap.js';
+import { App } from '../../model/core/app.js';
 import type { DataShareActivatedMessage } from '../../services/nrp.js';
 import { UpdatePathBody } from '../../types/datastore.js';
 import type { CoreRouteClass, RequestWithBody } from '../../types/routes.js';
 import { dataSharingDestinationProblem, remoteAppUrlsOf } from '../../helpers/egress.js';
+import { checkPolicyConfig, invalidPolicy } from '../../access-control/policy-definition.js';
 
 // What the activate route (ActivateAppDataSharing) responds with. A remote whose side of the agreement is already
 // active responds `true` instead, which has no `status` so is treated as not activated.
 interface DataSharingActivationResult {
   status: boolean;
   token: string;
+  // The partner's app, from a Buttress that pairs by app
+  appId?: string;
 }
 
 /**
@@ -85,12 +91,16 @@ const activateDataSharing = async (
   const activationResult = (await buttressAdapter.activateDataSharing(
     dataSharing.remoteApp.token,
     newToken,
+    String(dataSharing._appId),
   )) as DataSharingActivationResult | null;
   if (!activationResult || !activationResult.status) return dataSharing;
 
-  // Flag our data sharing agreement as active & update the remote app token with the new one.
-  await models.agreements.activate(dataSharing.id, activationResult.token);
+  // Flag our data sharing agreement as active, update the remote app token with the new one, and record the partner's
+  // app, where a create that names it goes. A partner from before pairing gave it doesn't, and is asked later.
+  const partnerAppId = ObjectIdHelper.isValid(activationResult.appId) ? String(activationResult.appId) : null;
+  await models.agreements.activate(dataSharing.id, activationResult.token, partnerAppId);
   dataSharing.remoteApp.token = activationResult.token;
+  dataSharing.remoteApp.appId = partnerAppId;
 
   // Update our data sharing agreement token with the new value.
   await models.tokens.updateById(dataSharingTokenId, { $set: { value: newToken } });
@@ -135,6 +145,43 @@ const destinationRefused = (problem: string) =>
 
 // Why a system-only route reaches every app
 const SYSTEM_ONLY = 'the route takes only system tokens';
+
+/**
+ * @class GetAppDataSharingIdentity
+ * @description Called by a partner Buttress with the token this app gave it, to learn which app the agreement pairs it
+ *   with: an agreement paired before pairing told each side the other's app asks this. It comes before
+ *   `app-data-sharing/:id`, which would take `identity` for an id.
+ */
+class GetAppDataSharingIdentity extends Route {
+  constructor(services: Services) {
+    super(
+      'app-data-sharing/identity',
+      'GET App Data Sharing Identity',
+      services,
+      Model.getCoreModel(AppDataSharingSchemaModel).schemaData,
+    );
+    this.verb = Route.Constants.Verbs.GET;
+    this.authType = Route.Constants.Type.DATASHARING;
+    this.permissions = Route.Constants.Permissions.READ;
+  }
+
+  override async _validate(req: Request, _res: Response) {
+    if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.DATA_SHARING) {
+      throw Helpers.Errors.forbidden(
+        'invalid_token_type',
+        "Only a partner's data sharing token can ask which app it's for",
+      );
+    }
+    if (!req.context.authApp) throw Helpers.Errors.internal('no_authenticated_app');
+
+    return req.context.authApp;
+  }
+
+  override async _exec(_req: Request, _res: Response, app: App) {
+    return { appId: String(app.id) };
+  }
+}
+routes.push(GetAppDataSharingIdentity);
 
 /**
  * @class GetAppDataSharing
@@ -190,6 +237,17 @@ class AddDataSharing extends Route {
       return Promise.reject(Helpers.Errors.badRequest('missing_policy'));
     }
 
+    // The agreement's policy is made from it, so it's checked as a policy's configs are when it's saved: verbs or a
+    // schema given as text, which the policy schema doesn't take, would be stored as it is
+    const issues = checkPolicyConfig(req.body.policyConfig).map((issue) => ({
+      ...issue,
+      path: issue.path.replace(/^config/, 'policyConfig'),
+    }));
+    if (issues.length > 0) {
+      this.log(`[${this.name}] Invalid policy config for ${req.body.name}`, Route.LogLevel.ERR);
+      return Promise.reject(invalidPolicy(req.body.name, issues));
+    }
+
     // Only to hosts the operator allows, when they've set a list
     const destination = await dataSharingDestinationProblem([req.body.remoteApp?.endpoint, req.body.remoteApp?.ws]);
     if (destination) return Promise.reject(destinationRefused(destination));
@@ -202,13 +260,6 @@ class AddDataSharing extends Route {
       this.log(`${this.schemaName}: Duplicate entity`, Route.LogLevel.ERR, req.context.id);
       return Promise.reject(Helpers.Errors.badRequest('duplicate'));
     }
-
-    // TODO: Should check the policy config instead.
-    // const policyCheck = await Helpers.checkAppPolicyProperty(req.authApp.policyPropertiesList, req.body.dataSharing.local);
-    // if (!policyCheck.passed) {
-    // 	this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
-    // 	return Promise.reject(Helpers.Errors.badRequest('invalid_policy_property'));
-    // }
 
     return true;
   }
@@ -279,6 +330,8 @@ routes.push(BulkUpdateAppDataSharing);
 
 /**
  * @class UpdateAppDataSharingPolicy
+ * @description Gives an agreement's partner new access: the body is the configs of the agreement's policy, as
+ *   `policyConfig` is given when the agreement is added, and replaces them.
  */
 class UpdateAppDataSharingPolicy extends Route {
   constructor(services: Services) {
@@ -293,53 +346,64 @@ class UpdateAppDataSharingPolicy extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  override _validate(req: RequestWithBody<unknown, { dataSharingId: string }>, _res: Response) {
-    return new Promise<{ appId: string }>((resolve, reject) => {
-      if (!req.context.authApp) {
-        this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-        return reject(Helpers.Errors.internal('no_authenticated_app'));
-      }
+  override async _validate(req: RequestWithBody<unknown, { dataSharingId: string }>, _res: Response) {
+    if (!req.context.authApp) {
+      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+      throw Helpers.Errors.internal('no_authenticated_app');
+    }
 
-      const appId = req.context.authApp.id;
+    const appId = req.context.authApp.id;
 
-      if (!req.params.dataSharingId) {
-        this.log('ERROR: No Data Sharing Id', Route.LogLevel.ERR);
-        return reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
-      }
+    if (!req.params.dataSharingId) {
+      this.log('ERROR: No Data Sharing Id', Route.LogLevel.ERR);
+      throw Helpers.Errors.badRequest('missing_id', 'An id is required');
+    }
 
-      const dataSharingId = req.params.dataSharingId;
-      if (!Model.getCoreModel(AppDataSharingSchemaModel).isValidId(dataSharingId)) {
-        return reject(Helpers.Errors.badRequest('invalid_id', 'The id is not valid'));
-      }
+    const dataSharingId = req.params.dataSharingId;
+    if (!Model.getCoreModel(AppDataSharingSchemaModel).isValidId(dataSharingId)) {
+      throw Helpers.Errors.badRequest('invalid_id', 'The id is not valid');
+    }
 
-      // Lookup
-      // The caller's app's agreement, which a system token names too
-      this.scoped(req, AppDataSharingSchemaModel)
-        .findOne({ id: dataSharingId, _appId: appId })
-        .then((res) => {
-          if (!res) {
-            this.log(`${this.schemaName}: unknown data sharing`, Route.LogLevel.ERR, req.context.id);
-            return reject(Helpers.Errors.entityNotFound('appDataSharing', dataSharingId));
-          }
-
-          resolve({
-            appId: appId,
-          });
-        })
-        .catch(reject);
+    // Checked as a policy's configs are when they're saved, and read as the policy schema reads them
+    const issues = checkPolicyConfig(req.body);
+    if (issues.length > 0) {
+      this.log(`[${this.name}] Invalid policy config for ${dataSharingId}`, Route.LogLevel.ERR);
+      throw invalidPolicy(undefined, issues);
+    }
+    const { validation, body: updates } = Model.getCoreModel(PolicySchemaModel).validateUpdate({
+      path: 'config',
+      value: req.body,
     });
+    if (!validation.isValid) throw invalidUpdateError(PolicySchemaModel.Schema.name, validation);
+
+    // The caller's app's agreement, which a system token names too
+    const agreement = await this.scoped(req, AppDataSharingSchemaModel).findOne({ id: dataSharingId, _appId: appId });
+    if (!agreement) {
+      this.log(`${this.schemaName}: unknown data sharing`, Route.LogLevel.ERR, req.context.id);
+      throw Helpers.Errors.entityNotFound('appDataSharing', dataSharingId);
+    }
+
+    // The policy made with it. An agreement made before that was recorded, or whose policy was removed, has none.
+    const policy = agreement._policyId
+      ? await this.scoped(req, PolicySchemaModel).findById(String(agreement._policyId))
+      : null;
+    if (!policy) {
+      this.log(`${this.schemaName}: no policy for data sharing ${dataSharingId}`, Route.LogLevel.ERR, req.context.id);
+      throw Helpers.Errors.notFound('not_found', "The agreement's policy was not found", { schema: 'policy' });
+    }
+
+    return { policyId: String(policy.id), updates };
   }
 
-  override _exec(
+  override async _exec(
     req: RequestWithBody<unknown, { dataSharingId: string }>,
     _res: Response,
-    validate: { appId: string },
+    validate: { policyId: string; updates: UpdatePathBody[] },
   ) {
-    // TODO: Handle a change to req.body.dataSharing.local and reflect the change onto the token
-    return this.scoped(req, AppDataSharingSchemaModel)
-      .owned(req.params.dataSharingId)
-      .then((agreements) => agreements.updatePolicy(validate.appId, req.params.dataSharingId, 'local', req.body))
-      .then(() => true);
+    // Through the policy model, which caches the policy again and works out its tokens' policies again, so the
+    // partner's requests and realtime go by the new configs
+    await this.scoped(req, PolicySchemaModel).updateByPath(validate.updates, validate.policyId);
+    return true;
   }
 }
 routes.push(UpdateAppDataSharingPolicy);
@@ -388,6 +452,13 @@ class ActivateAppDataSharing extends Route {
       return Promise.reject(Helpers.Errors.badRequest('missing_data_token'));
     }
 
+    // The partner's app, which a Buttress that pairs by app gives, to record on the agreement
+    const partnerAppId = req.query.appId;
+    if (partnerAppId !== undefined && !ObjectIdHelper.isValid(partnerAppId)) {
+      this.log('ERROR: invalid partner app id', Route.LogLevel.ERR);
+      return Promise.reject(Helpers.Errors.badRequest('invalid_app_id', "The partner app's id is not valid"));
+    }
+
     // The token's app is the agreement's
     return this.scoped(req, AppDataSharingSchemaModel)
       .findById(token._appDataSharingId)
@@ -407,6 +478,7 @@ class ActivateAppDataSharing extends Route {
         return {
           token,
           dataSharing,
+          partnerAppId: partnerAppId === undefined ? null : String(partnerAppId),
         };
       });
   }
@@ -414,14 +486,16 @@ class ActivateAppDataSharing extends Route {
   override async _exec(
     req: RequestWithBody<{ newToken: string }>,
     res: Response,
-    { token, dataSharing }: { token: Token; dataSharing: AppDataSharing },
+    { token, dataSharing, partnerAppId }: { token: Token; dataSharing: AppDataSharing; partnerAppId: string | null },
   ): Promise<DataSharingActivationResult | true> {
     if (dataSharing.active) return true;
 
     const newLocalToken = Model.getCoreModel(TokenSchemaModel).createTokenString();
 
     const { newToken } = req.body;
-    await (await this.scoped(req, AppDataSharingSchemaModel).owned(dataSharing.id)).activate(dataSharing.id, newToken);
+    await (
+      await this.scoped(req, AppDataSharingSchemaModel).owned(dataSharing.id)
+    ).activate(dataSharing.id, newToken, partnerAppId);
 
     await (
       await this.scoped(req, TokenSchemaModel).owned(token.id.toString())
@@ -432,6 +506,8 @@ class ActivateAppDataSharing extends Route {
     return {
       status: true,
       token: newLocalToken,
+      // So the partner records which app it's paired with
+      appId: String(dataSharing._appId),
     };
   }
 }

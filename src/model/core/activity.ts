@@ -194,7 +194,8 @@ class ActivitySchemaModel extends StandardModel<Activity> {
       authType: body.auth,
       params: body.req.params,
       query: JSON.stringify(q),
-      // Without its credentials and secrets, which the activity would keep indefinitely
+      // Without its credentials and secrets, which the activity would keep indefinitely. The request's body is read as it
+      // came, and left so for the route's work after the activity is added.
       body: encode(redactSecrets(body.req.body)), // HACK - Due to schema update results.
       timestamp: new Date(),
       _tokenId: body.req.context.token ? body.req.context.token.id : null,
@@ -203,12 +204,6 @@ class ActivitySchemaModel extends StandardModel<Activity> {
     };
 
     return Shared.sanitizeSchemaObject(ActivitySchemaModel.Schema, md);
-  }
-
-  override add(body: ActivityAddBody) {
-    body.req.body = encode(body.req.body);
-
-    return super.add(body);
   }
 }
 

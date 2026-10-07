@@ -83,7 +83,7 @@ describe('routes/RoutesLambdaSetup: calling a lambda endpoint', () => {
   // Calls the app's endpoint with `method` on `endpoint`, for a lambda with `triggers`, giving the response
   // Calls the app's endpoint with `method` on `endpoint`, for a lambda with `triggers`, giving the response, or
   // `{thrown}` for an error passed on to the error handler
-  async function call({ triggers, method = 'GET', endpoint = 'hello', result = { res: { hello: 'world' } }, query = {}, lambda = true }) {
+  async function call({ triggers, method = 'GET', endpoint = 'hello', result = { res: { hello: 'world' } }, query = {}, lambda = true, token }) {
     const executionAdd = sinon.stub().resolves({ id: 'exec-1' });
     const models = new Map([
       [AppSchemaModel, { findByApiPath: async () => ({ id: 'app-1' }) }],
@@ -102,7 +102,7 @@ describe('routes/RoutesLambdaSetup: calling a lambda endpoint', () => {
 
     const req = {
       method, params: { endpoint }, query, headers: {}, body: method === 'POST' ? { a: 1 } : undefined,
-      context: { id: 'req-1' },
+      context: { id: 'req-1', callerToken: token },
     };
     const res = { headers: {} };
     const answered = new Promise((resolve) => {
@@ -122,6 +122,35 @@ describe('routes/RoutesLambdaSetup: calling a lambda endpoint', () => {
     assert.notStrictEqual(res, 'still waiting');
     assert.strictEqual(res.code, 200);
     assert.deepStrictEqual(res.body.res, { hello: 'world' });
+  });
+
+  describe('the token it is called with', () => {
+    const ownAppToken = { id: 'caller-token', _appId: 'app-1' };
+    const otherAppToken = { id: 'other-token', _appId: 'app-2' };
+    const internalsOf = async (useCallerToken, token) => {
+      const { executionAdd } = await call({ triggers: [apiTrigger('hello', 'GET', 'SYNC', { useCallerToken })], token });
+      sinon.restore();
+      return executionAdd.firstCall.args[1];
+    };
+
+    it("is given to the execution as its caller, but only runs it when the endpoint uses the caller's token", async () => {
+      assert.deepStrictEqual(await internalsOf(false, ownAppToken), {
+        _appId: 'app-1', _tokenId: null, _callerTokenId: 'caller-token',
+      });
+      assert.deepStrictEqual(await internalsOf(true, ownAppToken), {
+        _appId: 'app-1', _tokenId: 'caller-token', _callerTokenId: 'caller-token',
+      });
+    });
+
+    it("is not given to the execution when it is a token of another app, or there is none", async () => {
+      for (const useCallerToken of [false, true]) {
+        for (const token of [otherAppToken, undefined]) {
+          assert.deepStrictEqual(await internalsOf(useCallerToken, token), {
+            _appId: 'app-1', _tokenId: null, _callerTokenId: null,
+          });
+        }
+      }
+    });
   });
 
   it('calls the lambda through the trigger the request matched, and tells the runner which', async () => {

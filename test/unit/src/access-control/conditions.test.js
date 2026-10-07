@@ -175,7 +175,8 @@ describe('access-control/conditions:filterPoliciesByPolicyConditions', () => {
     assert.strictEqual(result.length, 0);
   });
 
-  it('should throw on invalid operator', async () => {
+  // A policy's other configs, and the token's other policies, still apply
+  it("fails a condition with an operator it doesn't know, rather than failing the request", async () => {
     const policies = [
       {
         id: 'p1', name: 'test', appId: 'app1', env: { location: 'UK' },
@@ -186,10 +187,7 @@ describe('access-control/conditions:filterPoliciesByPolicyConditions', () => {
       },
     ];
 
-    await assert.rejects(
-      () => AccessControlConditions.filterPoliciesByPolicyConditions(policies, emptyEnv),
-      { message: /Invalid policy condition operator/ },
-    );
+    assert.deepStrictEqual(await AccessControlConditions.filterPoliciesByPolicyConditions(policies, emptyEnv), []);
   });
 
   it('should handle nested @and within @or', async () => {
@@ -230,46 +228,6 @@ describe('access-control/conditions:filterPoliciesByPolicyConditions', () => {
   });
 });
 
-describe('access-control/conditions:isPolicyDateTimeBased', () => {
-  it('should return the date field name when key is "date" with end range operator', async () => {
-    const condition = { date: { '@gt': '2025-01-01' } };
-    const result = await AccessControlConditions.isPolicyDateTimeBased(condition);
-    assert.strictEqual(result, 'date');
-  });
-
-  it('should return the time field name when key is "time" with end range operator', async () => {
-    const condition = { time: { '@gt': '14:00' } };
-    const result = await AccessControlConditions.isPolicyDateTimeBased(condition);
-    assert.strictEqual(result, 'time');
-  });
-
-  it('should return false for non-date/time conditions', async () => {
-    const condition = { '#env.role': { '@eq': 'admin' } };
-    const result = await AccessControlConditions.isPolicyDateTimeBased(condition);
-    assert.strictEqual(result, false);
-  });
-
-  it('should return false for conditions without end range operators (@eq is not an end range)', async () => {
-    const condition = { date: { '@eq': '2025-01-01' } };
-    const result = await AccessControlConditions.isPolicyDateTimeBased(condition);
-    assert.strictEqual(result, false);
-  });
-
-  it('should return false when operator is @lte (not in conditionEndRange)', async () => {
-    const condition = { date: { '@lte': '2025-01-01' } };
-    const result = await AccessControlConditions.isPolicyDateTimeBased(condition);
-    assert.strictEqual(result, false);
-  });
-});
-
-describe('access-control/conditions:isPolicyQueryBasedCondition', () => {
-  it('should return false when no schema names match', async () => {
-    const condition = { '#env.role': { '@eq': 'admin' } };
-    const result = await AccessControlConditions.isPolicyQueryBasedCondition(condition, ['user', 'car']);
-    assert.strictEqual(result, undefined);
-  });
-});
-
 describe('access-control/conditions: @or branches', () => {
   const policy = (condition) => ({ id: 'p1', name: 'p1', env: null, appId: 'app1', config: { condition } });
   const condition = {
@@ -288,5 +246,67 @@ describe('access-control/conditions: @or branches', () => {
       const kept = await AccessControlConditions.filterPoliciesByPolicyConditions([policy(condition)], env(role, location));
       assert.strictEqual(kept.length, 1, `${role} ${location}`);
     }
+  });
+});
+
+// A condition reads `value OP key` (D-33), and compares as a query does (D-32)
+describe('access-control/conditions: comparisons', () => {
+  const policy = (condition) => ({ id: 'p1', name: 'p1', env: null, appId: 'app1', config: { condition } });
+  const env = (extra) => ({ date: { now: '2025-06-01T00:00:00.000Z' }, user: null, appId: 'app1', ...extra });
+  const holds = async (condition, extra = {}) =>
+    (await AccessControlConditions.filterPoliciesByPolicyConditions([policy(condition)], env(extra))).length === 1;
+
+  it('compares text exactly', async () => {
+    assert(await holds({ '#env.location': { '@eq': 'UK' } }, { location: 'UK' }));
+    assert(!(await holds({ '#env.location': { '@eq': 'uk' } }, { location: 'UK' })));
+    assert(await holds({ '#env.location': { '@not': 'uk' } }, { location: 'UK' }));
+  });
+
+  it('compares values within their type, so 5 is not "5"', async () => {
+    assert(!(await holds({ '#env.level': { '@eq': 5 } }, { level: '5' })));
+    assert(await holds({ '#env.level': { '@eq': 5 } }, { level: 5 }));
+  });
+
+  it('reads the value against the key: the condition holds when the value is greater than the key', async () => {
+    assert(await holds({ '#env.level': { '@gt': 3 } }, { level: 2 }));
+    assert(!(await holds({ '#env.level': { '@gt': 3 } }, { level: 5 })));
+  });
+
+  it('reads @in as the value being one of the list the key holds', async () => {
+    assert(await holds({ '#env.roles': { '@in': 'admin' } }, { roles: ['user', 'admin'] }));
+    assert(!(await holds({ '#env.roles': { '@in': 'Admin' } }, { roles: ['user', 'admin'] })));
+  });
+
+  it('compares dates as dates, read as the policy language reads them, and fails a date it cannot read', async () => {
+    assert(await holds({ '#env.date.now': { '@ltDate': '2025-05-31T23:00:00.000Z' } }));
+    assert(await holds({ '#env.date.now': { '@ltDate': '31/05/2025' } }));
+    assert(!(await holds({ '#env.date.now': { '@ltDate': 'not a date' } })));
+  });
+
+  it("takes an operator's $ name as its @ name", async () => {
+    assert(await holds({ '#env.location': { $eq: 'UK' } }, { location: 'UK' }));
+    assert(await holds({ '#env.level': { $gt: 3 } }, { level: 2 }));
+    assert(!(await holds({ '#env.location': { $eq: 'uk' } }, { location: 'UK' })));
+  });
+
+  it('takes $and and $or as @and and @or', async () => {
+    const either = { $or: [{ '#env.role': { '@eq': 'admin' } }, { '#env.role': { '@eq': 'owner' } }] };
+    const both = { $and: [{ '#env.role': { '@eq': 'owner' } }, { '#env.location': { '@eq': 'UK' } }] };
+
+    assert(await holds(either, { role: 'owner' }));
+    assert(!(await holds(either, { role: 'user' })));
+    assert(await holds(both, { role: 'owner', location: 'UK' }));
+    assert(!(await holds(both, { role: 'owner', location: 'FR' })));
+  });
+
+  it('fails a key that resolves to nothing', async () => {
+    assert(!(await holds({ '#env.missing': { '@eq': 'x' } })));
+  });
+
+  // As a selection's criterion with no operator selects nothing
+  it('fails a criterion with no operator, rather than letting it hold whatever the env', async () => {
+    assert(!(await holds({ '#env.role': {} }, { role: 'admin' })));
+    assert(!(await holds({ '@or': [{ '#env.role': { '@eq': 'owner' } }, { '#env.role': {} }] }, { role: 'user' })));
+    assert(!(await holds({ '@and': [{ '#env.role': {} }] }, { role: 'user' })));
   });
 });

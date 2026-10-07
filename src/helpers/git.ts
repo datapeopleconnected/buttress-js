@@ -102,3 +102,18 @@ export const assertLambdaSharedModules = (modules: unknown): LambdaSharedModule[
  * Runs git in `cwd` with `args` as its argument list, without a shell.
  */
 export const git = (args: string[], cwd: string) => execFile('git', args, { cwd, encoding: 'utf8' });
+
+/**
+ * Whether `ref` (e.g. `refs/heads/main`) names a commit in the repository in `cwd`, by git's exit status rather than
+ * what it prints. Fails as git does for anything else, such as `cwd` not being a repository.
+ */
+export const hasRef = async (ref: string, cwd: string) => {
+  try {
+    await git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], cwd);
+    return true;
+  } catch (err: unknown) {
+    // --quiet exits 1, saying nothing, for a ref that doesn't exist
+    if ((err as { code?: unknown }).code === 1) return false;
+    throw err;
+  }
+};

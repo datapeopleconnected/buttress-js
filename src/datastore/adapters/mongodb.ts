@@ -37,8 +37,8 @@ import Logging from '../../helpers/logging.js';
 
 import AbstractAdapter from '../abstract-adapter.js';
 import MongodbIds from './mongodb-ids.js';
+import { toMongoQuery } from '../../access-control/operators.js';
 import ObjectIdHelper, { isObjectId } from './object-id.js';
-import { parseDocument } from '../../model/parse-document.js';
 
 import { BjsQuery } from '../../types/bjs-query.js';
 import {
@@ -328,8 +328,9 @@ export default class MongodbAdapter extends AbstractAdapter<ConnectionString> {
 
   /**
    * Builds a unique index for each of the schema's `__unique` properties, but those of array items, of the values of
-   * its type. One that can't be built, as when stored values already repeat, is logged, and the collection is used
-   * without it (D-25).
+   * its type. A list of values (`__itemtype`) gets a multikey index, so no two entities share any value in it, though
+   * one entity may repeat a value; an entity with none isn't indexed. One that can't be built, as when stored values
+   * already repeat, is logged, and the collection is used without it (D-25).
    * @param {Object} schemaData
    */
   async _buildUniqueIndexes(schemaData: Schema) {
@@ -342,13 +343,14 @@ export default class MongodbAdapter extends AbstractAdapter<ConnectionString> {
     const unique = Object.entries(flat).filter(([path, config]) => config.__unique === true && !withinArray(path));
 
     for (const [path, config] of unique) {
+      const type = config.__type === 'array' ? config.__itemtype : config.__type;
       try {
         await this.collection?.createIndex(
           { [path]: 1 },
           {
             unique: true,
             name: `${UNIQUE_INDEX}${path}`,
-            partialFilterExpression: { [path]: { $type: STORED_TYPES[config.__type] ?? 'string' } },
+            partialFilterExpression: { [path]: { $type: STORED_TYPES[type ?? ''] ?? 'string' } },
           },
         );
       } catch (err: unknown) {
@@ -452,7 +454,7 @@ export default class MongodbAdapter extends AbstractAdapter<ConnectionString> {
     model?: StandardModel<unknown>,
   ) {
     const { ops, result } = await this._prepareUpdate(id, body, context, schemaConfig, model);
-    await this._applyUpdateOps(id, ops);
+    await this._applyUpdateOps(id, ops, model);
     return result;
   }
 
@@ -468,6 +470,7 @@ export default class MongodbAdapter extends AbstractAdapter<ConnectionString> {
     await this._applyUpdateOps(
       id,
       prepared.flatMap((update) => update.ops),
+      model,
     );
     return prepared.map((update) => update.result);
   }
@@ -493,12 +496,8 @@ export default class MongodbAdapter extends AbstractAdapter<ConnectionString> {
       }
       case 'vector-add':
         {
-          let value: unknown = null;
-          if (schemaConfig && schemaConfig.__schema) {
-            value = parseDocument(schemaConfig.__schema, body.value).value;
-          } else {
-            value = body.value;
-          }
+          // validateUpdate gave an item of an item schema as it's stored
+          let value: unknown = body.value;
 
           if (!schemaConfig && model) {
             const entity = await model.findById(id);
@@ -551,16 +550,8 @@ export default class MongodbAdapter extends AbstractAdapter<ConnectionString> {
         break;
       case 'scalar':
         {
-          let value: unknown = null;
-          if (schemaConfig && schemaConfig.__schema && Array.isArray(body.value)) {
-            // An array value replaces the whole array (see StandardModel.updateByPath), so each element is an item.
-            const itemSchema = schemaConfig.__schema;
-            value = body.value.map((item) => parseDocument(itemSchema, item).value);
-          } else if (schemaConfig && schemaConfig.__schema) {
-            value = parseDocument(schemaConfig.__schema, body.value).value;
-          } else {
-            value = body.value;
-          }
+          // validateUpdate gave the items of an item schema as they're stored, a whole array's each one
+          const value = body.value;
 
           ops.push({
             $set: {
@@ -599,29 +590,34 @@ export default class MongodbAdapter extends AbstractAdapter<ConnectionString> {
   }
 
   // The update values carry ids as strings, so they're converted to ObjectIds before they're merged or applied.
-  async _applyUpdateOps(id: string, ops: UpdateOp[]) {
+  async _applyUpdateOps(id: string, ops: UpdateOp[], model?: StandardModel<unknown>) {
     if (ops.length < 1) return;
 
     const storedOps = ops.map((op) => this._ids.toStored(op));
-    const merged = mergeUpdateOps(storedOps);
+    // The model's derived fields are worked out from the entity as updated, which has to be read for it
+    const derives = ops.some((op) => model?.derivedFrom.includes(readOp(op).path.split('.')[0]));
+    const merged = derives ? null : mergeUpdateOps(storedOps);
     if (merged) {
       await this._write(() => this.collection?.updateOne({ _id: new ObjectId(id) }, merged as UpdateFilter<Document>));
       return;
     }
 
-    await this._applyUpdateOpsInOneWrite(id, storedOps);
+    await this._applyUpdateOpsInOneWrite(id, storedOps, derives ? model : undefined);
   }
 
   /**
    * Operations on overlapping paths can't share one update document, so they're worked out on the fields they touch as
-   * read, and those fields are written back only if they haven't changed since. If they have, it tries again.
+   * read, and those fields are written back only if they haven't changed since. If they have, it tries again. With a
+   * model, its derived fields are worked out from the entity as updated and written with them.
    */
-  async _applyUpdateOpsInOneWrite(id: string, ops: UpdateOp[]) {
+  async _applyUpdateOpsInOneWrite(id: string, ops: UpdateOp[], model?: StandardModel<unknown>) {
     if (!this.collection) throw new Error('No collection');
 
     const _id = new ObjectId(id);
     const fields = [...new Set(ops.map((op) => readOp(op).path.split('.')[0]))];
-    const projection = Object.fromEntries(fields.map((field) => [field, 1]));
+    // What the derived fields are worked out from is read as well, and has to be unchanged too
+    const read = [...new Set([...fields, ...(model?.derivedFrom ?? [])])];
+    const projection = Object.fromEntries(read.map((field) => [field, 1]));
 
     for (let attempt = 0; attempt < MAX_UPDATE_ATTEMPTS; attempt++) {
       const stored = await this.collection.findOne({ _id }, { projection });
@@ -631,11 +627,15 @@ export default class MongodbAdapter extends AbstractAdapter<ConnectionString> {
       applyUpdateOps(updated, ops);
 
       const unchanged: Filter<Document> = Object.fromEntries(
-        fields.map((field) => [field, field in stored ? stored[field] : { $exists: false }]),
+        read.map((field) => [field, field in stored ? stored[field] : { $exists: false }]),
       );
-      const $set = Object.fromEntries(
-        fields.filter((field) => field in updated).map((field) => [field, updated[field]]),
-      );
+      const derived: Document = model
+        ? this._ids.toStored(model.deriveFields(this._ids.fromStored(BSON.deserialize(BSON.serialize(updated)))))
+        : {};
+      const $set: Document = {
+        ...Object.fromEntries(fields.filter((field) => field in updated).map((field) => [field, updated[field]])),
+        ...derived,
+      };
       const $unset = Object.fromEntries(fields.filter((field) => !(field in updated)).map((field) => [field, '']));
       const update: UpdateFilter<Document> = {
         ...(Object.keys($set).length > 0 ? { $set } : {}),
@@ -692,8 +692,10 @@ export default class MongodbAdapter extends AbstractAdapter<ConnectionString> {
 
     if (_id === null) return false;
 
-    // The extra filter carries ids as strings, as any other query does
-    return this.collection?.countDocuments(this._query({ _id, ...extra })).then((count) => count > 0);
+    // The extra filter carries ids as strings, as any other query does. It goes beside the id under $and: spread in,
+    // an `id` of its own (the apps model's tenant clause) would become `_id` and replace the one asked for
+    const filter = Object.keys(extra).length === 0 ? { _id } : { $and: [{ _id }, extra] };
+    return this.collection?.countDocuments(this._query(filter)).then((count) => count > 0);
   }
 
   /*
@@ -812,7 +814,7 @@ export default class MongodbAdapter extends AbstractAdapter<ConnectionString> {
    * @return {Promise} - resolves to an array of docs
    */
   override async findOne<T extends object>(query: BjsQuery<T> | AdapterQuery, excludes: AdapterQuery = {}) {
-    const doc = await this.collection?.findOne(this._query(query), this._query(excludes) as FindOptions);
+    const doc = await this.collection?.findOne(this._query(query), this._ids.toStored(excludes) as FindOptions);
 
     return doc ? this._modifyDocument(doc) : null;
   }
@@ -878,8 +880,9 @@ export default class MongodbAdapter extends AbstractAdapter<ConnectionString> {
     });
   }
 
-  // A query with its ids as ObjectIds and `id` as `_id`
+  // A Buttress query as MongoDB takes it: MongoDB's operator names (toMongoQuery), its ids as ObjectIds and `id` as
+  // `_id`. The adapter is the only place a query becomes MongoDB's.
   _query(query: AdapterQuery | undefined): Filter<Document> {
-    return this._ids.toStored(query) as Filter<Document>;
+    return this._ids.toStored(query ? toMongoQuery(query as Record<string, unknown>) : query) as Filter<Document>;
   }
 }

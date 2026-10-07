@@ -21,10 +21,10 @@ import sinon from 'sinon';
 import AccessControlSingleton, { PolicyError } from '../../../../dist/access-control/index.js';
 import Model from '../../../../dist/model/index.js';
 import TokenSchemaModel from '../../../../dist/model/core/token.js';
-import PolicySchemaModel from '../../../../dist/model/core/policy.js';
 import AppSchemaModel from '../../../../dist/model/core/app.js';
 import { isPolicyExpired } from '../../../../dist/access-control/helpers.js';
 import Logging from '../../../../dist/helpers/logging.js';
+import { createSchemaModel } from '../../../schema-model.js';
 
 // Only the instance is exported (module-level singleton); grab the class off it so each
 // test gets a fresh, unshared instance instead of mutating shared access-control state.
@@ -212,6 +212,30 @@ describe('access-control/AccessControl:__getOutcome', () => {
     );
   });
 
+  it('rejects a search sorted by a property the remaining policies hide', async () => {
+    const instance = createInstance({ coreSchema: [], schemas: { app1: [userSchema] } });
+    const tokenPolicies = [
+      {
+        id: 'p1',
+        name: 'names',
+        priority: 1,
+        env: null,
+        config: [{ verbs: ['SEARCH'], schema: ['user'], query: {}, projection: { keys: ['name'] }, condition: null }],
+      },
+    ];
+    const req = createReq({ method: 'SEARCH', body: { query: {}, sort: { email: -1 } } });
+
+    await assert.rejects(
+      () => instance.__getOutcome(tokenPolicies, req, 'user', 'app1'),
+      (err) => {
+        assert.ok(err instanceof PolicyError);
+        assert.strictEqual(err.status, 403);
+        assert.strictEqual(err.code, 'property_access_denied');
+        return true;
+      },
+    );
+  });
+
   it('merges the queries of two otherwise-equivalent matching policies with $or', async () => {
     const instance = createInstance({ coreSchema: [], schemas: { app1: [userSchema] } });
     const tokenPolicies = [
@@ -264,6 +288,81 @@ describe('access-control/AccessControl:__getOutcome', () => {
   });
 });
 
+describe('access-control/AccessControl:__getOutcome merging (BUG-17)', () => {
+  const policy = (name, config) => ({
+    id: `id-${name}`,
+    name,
+    priority: 1,
+    env: null,
+    config: [{ verbs: ['GET'], schema: ['user'], query: {}, projection: null, condition: null, ...config }],
+  });
+
+  it("doesn't narrow a policy that reads every property by one with the same query that reads some", async () => {
+    const instance = createInstance({ coreSchema: [], schemas: { app1: [userSchema] } });
+    const tokenPolicies = [policy('names', { projection: { keys: ['name'] } }), policy('everything', {})];
+
+    const outcome = await instance.__getOutcome(tokenPolicies, createReq(), 'user', 'app1');
+
+    assert.strictEqual(outcome.length, 1);
+    assert.ok(!outcome[0].projection, `projected ${JSON.stringify(outcome[0].projection)}`);
+  });
+
+  it('merges policies whatever other verbs their configs are for', async () => {
+    const instance = createInstance({ coreSchema: [], schemas: { app1: [userSchema] } });
+    const tokenPolicies = [policy('a', { query: { a: 1 } }), policy('b', { query: { b: 2 }, verbs: ['GET', 'SEARCH'] })];
+
+    const outcome = await instance.__getOutcome(tokenPolicies, createReq(), 'user', 'app1');
+
+    assert.strictEqual(outcome.length, 1);
+    assert.deepStrictEqual(outcome[0].query, { $or: [{ a: 1 }, { b: 2 }] });
+  });
+});
+
+// A policy whose query can't be read for the schema, saved before its query was checked, grants nothing, as in realtime,
+// and the token's other policies still apply
+describe("access-control/AccessControl:__getOutcome a policy query that can't be read", () => {
+  const policy = (name, query) => ({
+    id: `id-${name}`,
+    name,
+    priority: 1,
+    env: null,
+    config: [{ verbs: ['GET'], schema: ['user'], query, projection: null, condition: null }],
+  });
+  const withModel = () => {
+    const { model } = createSchemaModel(userSchema);
+    sinon.stub(Model, 'getAppModel').resolves(model);
+  };
+
+  it("leaves out a policy whose query can't be read, logging it, and grants through the token's others", async () => {
+    withModel();
+    const logged = sinon.stub(Logging, 'logWarn');
+    const instance = createInstance({ coreSchema: [], schemas: { app1: [userSchema] } });
+    const tokenPolicies = [policy('broken', { name: { '@in': 'a' } }), policy('fine', { name: 'b' })];
+
+    const outcome = await instance.__getOutcome(tokenPolicies, createReq(), 'user', 'app1');
+
+    assert.deepStrictEqual(outcome.map((config) => config.policies), [['fine#0']]);
+    assert.ok(logged.calledWithMatch(/broken#0/), String(logged.args));
+  });
+
+  it("refuses with 403 when no policy's query can be read", async () => {
+    withModel();
+    sinon.stub(Logging, 'logWarn');
+    const instance = createInstance({ coreSchema: [], schemas: { app1: [userSchema] } });
+
+    await assert.rejects(
+      () => instance.__getOutcome([policy('broken', { name: { '@rex': '(' } })], createReq(), 'user', 'app1'),
+      (err) => {
+        assert.ok(err instanceof PolicyError);
+        assert.strictEqual(err.status, 403);
+        assert.strictEqual(err.code, 'access_denied');
+        assert.match(err.message, /query can not be applied to user/);
+        return true;
+      },
+    );
+  });
+});
+
 describe('access-control/AccessControl:accessControlPolicyMiddleware', () => {
   it("refuses a token whose app no longer exists, rather than failing the request", async () => {
     sinon.stub(Model, 'getCoreModel').callsFake((model) => {
@@ -292,6 +391,52 @@ describe('access-control/AccessControl:accessControlPolicyMiddleware', () => {
   });
 });
 
+describe('access-control/AccessControl:__cacheAppSchema', () => {
+  const stubApp = (findById) =>
+    sinon.stub(Model, 'getCoreModel').callsFake((model) => {
+      if (model === AppSchemaModel) return { findById };
+      throw new Error(`Unexpected model requested in test: ${model?.name}`);
+    });
+
+  it("caches an app's collections", async () => {
+    const car = { name: 'car', type: 'collection', properties: {} };
+    const stored = JSON.stringify([car, { name: 'base', type: 'template', properties: {} }]);
+    stubApp(async (id) => ({ id, __schema: stored }));
+    const instance = createInstance();
+
+    await instance.__cacheAppSchema('app-1');
+
+    assert.deepStrictEqual(instance._schemas['app-1'], [car]);
+  });
+
+  for (const [label, stored] of [
+    ["isn't JSON", '[{"name": "car", '],
+    ["isn't a list", JSON.stringify({ name: 'car', type: 'collection' })],
+    ['is null', 'null'],
+    ['holds null', JSON.stringify([{ name: 'car', type: 'collection', properties: {} }, null])],
+    ['holds a schema with no type', JSON.stringify([{ name: 'car', properties: {} }])],
+  ]) {
+    it(`caches no schemas for an app whose stored schema ${label}, and logs it naming the app`, async () => {
+      const warn = sinon.stub(Logging, 'logWarn');
+      stubApp(async (id) => ({ id, __schema: stored }));
+      const instance = createInstance();
+
+      await instance.__cacheAppSchema('app-2');
+
+      assert.deepStrictEqual(instance._schemas['app-2'], []);
+      sinon.assert.calledOnceWithMatch(warn, 'app-2');
+    });
+  }
+
+  it('still fails on an error that is not about the stored schema', async () => {
+    stubApp(async () => {
+      throw new Error('datastore went away');
+    });
+
+    await assert.rejects(createInstance().__cacheAppSchema('app-1'), /datastore went away/);
+  });
+});
+
 describe('access-control/AccessControl:__getInnerObjectValue', () => {
   it('returns null unchanged', () => {
     const instance = createInstance();
@@ -305,122 +450,6 @@ describe('access-control/AccessControl:__getInnerObjectValue', () => {
   });
 });
 
-function stubModelWith(map) {
-  return sinon.stub(Model, 'getCoreModel').callsFake((modelClass) => {
-    const fake = map.get(modelClass);
-    if (!fake) throw new Error(`Unexpected model requested in test: ${modelClass?.name}`);
-    return fake;
-  });
-}
-
-describe('access-control/AccessControl:_queuePolicyLimitDeleteEvent', () => {
-  it('queues a policy whose limit came from the cache as a string, without throwing', async () => {
-    sinon.useFakeTimers(new Date('2025-06-01T00:00:00.000Z'));
-    const instance = createInstance();
-    instance._nrp = { emit: sinon.spy() };
-    stubModelWith(new Map());
-
-    const policy = { id: 'policy-1', name: 'expiring', limit: '2025-06-03T00:00:00.000Z', selection: {} };
-    assert.doesNotThrow(() => instance._queuePolicyLimitDeleteEvent([policy], { id: 'token-1', policyProperties: {} }, 'app1'));
-
-    assert.strictEqual(instance._queuedLimitedPolicy.length, 1);
-  });
-
-  it('queues two policies with the same name but different ids', async () => {
-    sinon.useFakeTimers(new Date('2025-06-01T00:00:00.000Z'));
-    const instance = createInstance();
-    instance._nrp = { emit: sinon.spy() };
-    stubModelWith(new Map());
-
-    const limit = new Date('2025-06-03T00:00:00.000Z');
-    instance._queuePolicyLimitDeleteEvent(
-      [{ id: 'policy-1', name: 'same', limit, selection: {} }, { id: 'policy-2', name: 'same', limit, selection: {} }],
-      { id: 'token-1', policyProperties: {} },
-      'app1',
-    );
-
-    assert.strictEqual(instance._queuedLimitedPolicy.length, 2);
-  });
-
-  it('queues and then removes an expiring policy, busting the policy cache', async () => {
-    const clock = sinon.useFakeTimers(new Date('2025-06-01T00:00:00.000Z'));
-    const instance = createInstance();
-    const nrp = { emit: sinon.spy() };
-    instance._nrp = nrp;
-
-    const rm = sinon.stub().resolves();
-    const setPolicyPropertiesById = sinon.stub().resolves();
-    // The token as stored when the limit is reached, which has gained a property since the request
-    const findOne = sinon.stub().resolves({ id: 'token-1', policyProperties: { role: 'admin', team: 'red' } });
-    stubModelWith(
-      new Map([
-        [PolicySchemaModel, { rm }],
-        [TokenSchemaModel, { setPolicyPropertiesById, findOne, createId: (v) => v }],
-      ]),
-    );
-
-    const policy = {
-      id: 'policy-1',
-      name: 'expiring',
-      limit: new Date('2025-06-03T00:00:00.000Z'),
-      selection: { role: {} },
-    };
-    const userToken = { id: 'token-1', policyProperties: { role: 'admin' } };
-
-    instance._queuePolicyLimitDeleteEvent([policy], userToken, 'app1');
-    assert.strictEqual(instance._queuedLimitedPolicy.length, 1);
-
-    await clock.tickAsync(2 * 24 * 60 * 60 * 1000 + 1000);
-
-    assert.ok(rm.calledWith('policy-1'));
-    assert.ok(nrp.emit.calledWith('app-policy:bust-cache'));
-    assert.deepStrictEqual(setPolicyPropertiesById.firstCall.args[1], { team: 'red' });
-    assert.strictEqual(instance._queuedLimitedPolicy.length, 0, 'the queue entry should be cleared after it fires');
-
-    clock.restore();
-  });
-
-  it('does not queue the same limited policy twice while it is already pending', async () => {
-    sinon.useFakeTimers(new Date('2025-06-01T00:00:00.000Z'));
-    const instance = createInstance();
-    instance._nrp = { emit: sinon.spy() };
-    stubModelWith(new Map());
-
-    const policy = { id: 'policy-1', name: 'expiring', limit: new Date('2025-06-03T00:00:00.000Z'), selection: {} };
-    const userToken = { id: 'token-1', policyProperties: {} };
-
-    instance._queuePolicyLimitDeleteEvent([policy], userToken, 'app1');
-    instance._queuePolicyLimitDeleteEvent([policy], userToken, 'app1');
-
-    assert.strictEqual(instance._queuedLimitedPolicy.length, 1);
-  });
-
-  it('does not queue a policy whose limit is more than a week away', async () => {
-    sinon.useFakeTimers(new Date('2025-06-01T00:00:00.000Z'));
-    const instance = createInstance();
-    instance._nrp = { emit: sinon.spy() };
-    stubModelWith(new Map());
-
-    const policy = { id: 'policy-1', name: 'far-future', limit: new Date('2025-12-01T00:00:00.000Z'), selection: {} };
-    instance._queuePolicyLimitDeleteEvent([policy], { id: 'token-1', policyProperties: {} }, 'app1');
-
-    assert.strictEqual(instance._queuedLimitedPolicy.length, 0);
-  });
-
-  it('ignores policies without a valid limit', () => {
-    const instance = createInstance();
-    instance._nrp = { emit: sinon.spy() };
-
-    instance._queuePolicyLimitDeleteEvent(
-      [{ id: 'policy-1', name: 'no-limit', selection: {} }],
-      { id: 'token-1', policyProperties: {} },
-      'app1',
-    );
-
-    assert.strictEqual(instance._queuedLimitedPolicy.length, 0);
-  });
-});
-
 describe('access-control/helpers:isPolicyExpired', () => {
   it('is true only for a policy whose limit, as a Date or a string, has passed', () => {
     const now = new Date('2025-06-01T00:00:00.000Z');
@@ -430,5 +459,14 @@ describe('access-control/helpers:isPolicyExpired', () => {
     assert.strictEqual(isPolicyExpired({ limit: '2025-06-02T00:00:00.000Z' }, now), false);
     assert.strictEqual(isPolicyExpired({ limit: null }, now), false);
     assert.strictEqual(isPolicyExpired({}, now), false);
+  });
+
+  // SR-DPC-001 S8: it was read as no limit, so a mistyped date granted access for ever
+  it("is true for a limit that isn't a date", () => {
+    const now = new Date('2025-06-01T00:00:00.000Z');
+
+    assert.strictEqual(isPolicyExpired({ limit: '2025-13-45' }, now), true);
+    assert.strictEqual(isPolicyExpired({ limit: 'next tuesday' }, now), true);
+    assert.strictEqual(isPolicyExpired({ limit: new Date('not a date') }, now), true);
   });
 });

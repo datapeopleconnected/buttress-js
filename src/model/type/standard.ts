@@ -14,6 +14,14 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import Sugar from '../../helpers/sugar.js';
+import {
+  ALIASES,
+  hasOperatorNames,
+  isPlainObject,
+  isValueOperators,
+  LOGICAL_ALIASES,
+  operandProblem,
+} from '../../access-control/operators.js';
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
 import { decode, isDecodeError } from '../../helpers/codecs.js';
@@ -28,8 +36,11 @@ import { ModelManager } from '../index.js';
 import AbstractAdapter, { AdapterFindResult } from '../../datastore/abstract-adapter.js';
 import { Datastore } from '../../datastore/index.js';
 import { AdapterDocument, AdapterQuery, UpdatePathBody, UpdatePathContext } from '../../types/datastore.js';
-import { isUpdatePathRefusal, resolveUpdatePath } from '../update-paths.js';
+import { isQueryPath, isUpdatePathRefusal, resolveUpdatePath } from '../update-paths.js';
 import { FlattenedSchema, FlattenedSchemaProperty } from '../../types/schema.js';
+
+// What text naming a value of the env a query is read with starts with
+const ENV_PATH = 'env.';
 
 // The types a compared query value is read as, and the operators that compare
 const QUERY_TYPES = new Set(['boolean', 'number', 'uuid', 'date', 'id']);
@@ -41,7 +52,22 @@ const invalidQueryValue = (property: string, type: string) =>
     expected: type,
   });
 
-// A query after parseQuery, with each property's operators resolved to their datastore form
+// A query names an operator Buttress doesn't know: refused, rather than sent on for MongoDB to refuse (R3 step 7)
+const unknownQueryOperator = (path: string, operator: string) =>
+  Helpers.Errors.badRequest('unknown_operator', `The query names an operator Buttress doesn't know: ${operator}`, {
+    path,
+    received: operator,
+  });
+
+// A strict schema's query names a path it doesn't have: refused, as a create giving one is (R3 step 7)
+const unknownQueryPath = (path: string) =>
+  Helpers.Errors.badRequest('unknown_path', `The query names a path the schema doesn't have: ${path}`, { path });
+
+// An operator in its `$` name: `@op` is `$op`
+const operatorName = (operator: string) => (operator.startsWith('@') ? `$${operator.slice(1)}` : operator);
+
+// A query after parseQuery: a Buttress query, its operators in their `$` names and its values read as their
+// properties' types. The MongoDB adapter gives it MongoDB's names (toMongoQuery).
 export type ParsedQuery = Record<string, unknown>;
 
 /* ********************************************************************************
@@ -174,77 +200,82 @@ export default class StandardModel<TDocument = AdapterDocument> {
     query: Record<string, unknown>,
     envFlat: Record<string, unknown> = {},
     schemaFlat: FlattenedSchema = this.flatSchemaData,
+    // A strict schema's query names only paths the schema has
+    checkPaths: boolean = this.schemaData?.strict === true,
   ): ParsedQuery {
     let output: Record<string, unknown> = {};
 
     for (const property in query) {
-      if (!{}.hasOwnProperty.call(query, property)) continue;
+      if (!Object.hasOwn(query, property)) continue;
       if (property === '__crPath') continue;
       const command = query[property];
 
-      if (property === '$or' && Array.isArray(command)) {
+      // @and, @or and @nor, or their $ names, take a list of queries
+      if (Object.hasOwn(LOGICAL_ALIASES, property)) {
+        if (!Array.isArray(command) || !command.every(isPlainObject)) throw invalidQueryValue(property, 'array');
         if (command.length > 0) {
-          output['$or'] = (command as Record<string, unknown>[]).map((q) => this.parseQuery(q, envFlat, schemaFlat));
+          output[LOGICAL_ALIASES[property]] = command.map((q) => this.parseQuery(q, envFlat, schemaFlat, checkPaths));
         }
-      } else if ((property === '$and' || property === '$nor') && Array.isArray(command)) {
-        if (command.length > 0) {
-          output[property] = (command as Record<string, unknown>[]).map((q) => this.parseQuery(q, envFlat, schemaFlat));
-        }
-      } else if (typeof command === 'object' && command !== null && !this.isValidId(command)) {
-        const operators = command as Record<string, unknown>;
-        for (let operator in operators) {
-          if (!{}.hasOwnProperty.call(operators, operator)) continue;
-          let operand = operators[operator];
-          let operandOptions: string | undefined = undefined;
+        continue;
+      }
+      // Any other operator's name in a property's place names no property
+      if (property.startsWith('$') || property.startsWith('@')) throw unknownQueryOperator(property, property);
+      // Nor does a path naming __proto__: a schema can't have one
+      if (property.split('.').includes('__proto__')) throw unknownQueryPath(property);
+      if (checkPaths && !isQueryPath(schemaFlat, property)) throw unknownQueryPath(property);
 
-          switch (operator) {
-            case '$not':
-              operator = '$ne';
-              break;
-
-            case '$elMatch':
-              operator = '$elemMatch';
-              break;
-            case '$gtDate':
-              operator = '$gt';
-              break;
-            case '$ltDate':
-              operator = '$lt';
-              break;
-            case '$gteDate':
-              operator = '$gte';
-              break;
-            case '$lteDate':
-              operator = '$lte';
-              break;
-
-            // $rex is case-sensitive and $rexi isn't, as in the SPR, policy selection and crag.
-            case '$rex':
-              operator = '$regex';
-              break;
-            case '$rexi':
-              operator = '$regex';
-              operandOptions = 'i';
-              break;
-            // The property holds the text, which is matched as it is
-            case '$inProp':
-              operator = '$regex';
-              if (typeof operand === 'string') operand = operand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-              break;
-
-            default:
-            // TODO: Throw an error if operator isn't supported
-          }
-
-          output = this.parseQueryProperty(property, operator, operand, operandOptions, output, envFlat, schemaFlat);
+      if (hasOperatorNames(command)) {
+        // An operator keeps its Buttress name, in its `$` form: the query stays a Buttress query, and only the MongoDB
+        // adapter gives it MongoDB's names (toMongoQuery). Every key must be one the registry knows.
+        for (const operator of Object.keys(command)) {
+          if (!Object.hasOwn(ALIASES, operator)) throw unknownQueryOperator(property, operator);
+          output = this.parseQueryProperty(
+            property,
+            operatorName(operator),
+            command[operator],
+            output,
+            envFlat,
+            schemaFlat,
+            checkPaths,
+          );
         }
       } else {
-        // Direct compare
-        output = this.parseQueryProperty(property, '$eq', command, null, output, envFlat, schemaFlat);
+        // A value, compared whole as MongoDB compares it: a list, an object of fields, a date
+        output = this.parseQueryProperty(property, '$eq', command, output, envFlat, schemaFlat, checkPaths);
       }
     }
 
     return output;
+  }
+
+  /**
+   * The operators an $elMatch gives a value of a list, each one the registry knows, in its `$` name, read as the same
+   * operator given the list outside $elMatch is: its operand checked, and a comparison's read as the list's items.
+   * @param {string} property - the list
+   * @param {object} operators
+   * @return {object}
+   */
+  __parseOperators(
+    property: string,
+    operators: Record<string, unknown>,
+    envFlat: Record<string, unknown>,
+    schemaFlat: FlattenedSchema,
+    checkPaths: boolean,
+  ): Record<string, unknown> {
+    let output: Record<string, unknown> = {};
+    for (const [operator, operand] of Object.entries(operators)) {
+      if (!Object.hasOwn(ALIASES, operator)) throw unknownQueryOperator(property, operator);
+      output = this.parseQueryProperty(
+        property,
+        operatorName(operator),
+        operand,
+        output,
+        envFlat,
+        schemaFlat,
+        checkPaths,
+      );
+    }
+    return output[property] as Record<string, unknown>;
   }
 
   /**
@@ -273,35 +304,41 @@ export default class StandardModel<TDocument = AdapterDocument> {
     property: string,
     operator: string,
     operand: unknown,
-    operandOptions?: string | null,
     output: Record<string, unknown> = {},
     envFlat: Record<string, unknown> = {},
     schemaFlat: FlattenedSchema = {},
+    checkPaths: boolean = false,
   ) {
-    // Check to see if operand is a path and fetch value
-    if (operand && (operand as string).indexOf && (operand as string).indexOf('.') !== -1) {
-      const parts = (operand as string).split('.');
-      const key = parts.shift();
-
-      const path = parts.join('.');
-
-      if (key === 'env' && envFlat[path]) {
-        operand = envFlat[path];
-      } else {
-        // throw new Error(`Unable to find ${path} in schema.authFilter.env`);
-      }
+    // Text naming an env path, `env.<path>`, is the env's own value there, if it has one
+    if (typeof operand === 'string' && operand.startsWith(ENV_PATH)) {
+      const path = operand.slice(ENV_PATH.length);
+      if (Object.hasOwn(envFlat, path) && envFlat[path]) operand = envFlat[path];
     }
 
     // Convert id
     let propSchema: FlattenedSchemaProperty | undefined = undefined;
-    if (schemaFlat[property]) {
+    if (Object.hasOwn(schemaFlat, property)) {
       propSchema = schemaFlat[property];
     } else if (Object.keys(schemaFlat).length > 0) {
       // throw Helpers.Errors.badRequest('unknown_property', `Unknown property ${property} in query`);
     }
 
-    if (operator === '$elemMatch' && propSchema && propSchema.__schema) {
-      operand = this.parseQuery(operand as Record<string, unknown>, envFlat, propSchema.__schema);
+    // What the operator is for MongoDB, which says how its operand is read
+    const mongoOperator = Object.hasOwn(ALIASES, operator) ? ALIASES[operator].operator : operator;
+
+    // An operand MongoDB couldn't take is refused, rather than failing the request when MongoDB reads it, by the rules
+    // a policy's query is checked by when it's saved
+    const expected = operandProblem(operator, operand);
+    if (expected) throw invalidQueryValue(property, expected);
+
+    if (mongoOperator === '$elemMatch') {
+      // The operators a value of the list must pass, or a query an item must match, its own $or, $and and $nor
+      // included, read against the items' schema. An item's query is checked against the items' schema, when the
+      // array has one
+      const itemQuery = operand as Record<string, unknown>;
+      operand = isValueOperators(itemQuery)
+        ? this.__parseOperators(property, itemQuery, envFlat, schemaFlat, checkPaths)
+        : this.parseQuery(itemQuery, envFlat, propSchema?.__schema ?? {}, checkPaths && Boolean(propSchema?.__schema));
     } else if (propSchema) {
       const itemSchema = propSchema.__schema;
       if (propSchema.__type === 'array' && itemSchema && typeof operand === 'object' && operand !== null) {
@@ -323,17 +360,14 @@ export default class StandardModel<TDocument = AdapterDocument> {
         : propSchema.__type === 'array' && propSchema.__itemtype && QUERY_TYPES.has(propSchema.__itemtype)
           ? propSchema.__itemtype
           : undefined;
-      if (type && COMPARISONS.has(operator)) operand = this.__decodeOperand(property, type, operand);
+      if (type && COMPARISONS.has(mongoOperator)) operand = this.__decodeOperand(property, type, operand);
     }
 
-    if (!output[property]) {
+    // The property's own entry, not one an object has from Object.prototype (a field named `constructor`)
+    if (!Object.hasOwn(output, property)) {
       output[property] = {};
     }
     const propertyOutput = output[property] as Record<string, unknown>;
-
-    if (operandOptions) {
-      propertyOutput[`$options`] = operandOptions;
-    }
 
     if (operator.indexOf('$') !== 0) {
       propertyOutput[`$${operator}`] = operand;
@@ -364,8 +398,28 @@ export default class StandardModel<TDocument = AdapterDocument> {
       entity.updatedAt = body.updatedAt ? Sugar.Date.create(body.updatedAt as string | number | Date) : null;
     }
 
-    return Object.assign(document, entity);
+    const stored = Object.assign(document, entity);
+    return Object.assign(stored, this.deriveFields(stored));
   }
+
+  /**
+   * The top-level fields the model's derived fields are worked out from, see deriveFields. An update to any of them
+   * has the adapter work the derived fields out again, from the entity as updated, in the same write.
+   */
+  get derivedFrom(): string[] {
+    return [];
+  }
+
+  /**
+   * Fields the model works out from an entity's other fields and stores beside them, so the datastore can index them,
+   * e.g. a user's `_authKeys`. They're worked out on add, and on every update to the fields in derivedFrom.
+   * @param {AdapterDocument} _entity - as stored, with ids as strings; only derivedFrom's fields are there on update
+   * @return {AdapterDocument} the derived fields
+   */
+  deriveFields(_entity: AdapterDocument): AdapterDocument {
+    return {};
+  }
+
   // Subclasses take their own body and internals, and can resolve to other than a stream
   add(body: unknown, internals?: unknown): Promise<unknown> {
     return this.adapter.add(body, (item) => this.__parseAddBody(item, internals));
@@ -409,15 +463,14 @@ export default class StandardModel<TDocument = AdapterDocument> {
   /**
    * @param {object} body
    * @param {string} id
-   * @param {string} sourceId
-   * @param {string} model
+   * @param {string} via - for a federated model, the agreement the record was read through (its sourceOf)
    * @return {promise}
    */
   // TODO: Model shouldn't be being passed through this way.
   async updateByPath(
     body: UpdatePathBody | UpdatePathBody[],
     id: string,
-    _sourceId: string | null = null,
+    _via: string | null = null,
   ): Promise<unknown[]> {
     if (body instanceof Array === false) {
       body = [body];
@@ -456,11 +509,11 @@ export default class StandardModel<TDocument = AdapterDocument> {
 
   /**
    * @param {string} id
-   * @param {string} sourceId
+   * @param {string} via - for a federated model, the agreement the record was read through (its sourceOf)
    * @param {object} extra
    * @return {Promise}
    */
-  exists(id: string, _sourceId: string | null = null, extra: AdapterQuery = {}) {
+  exists(id: string, _via: string | null = null, extra: AdapterQuery = {}) {
     return this.adapter.exists(id, extra);
   }
 
@@ -481,20 +534,20 @@ export default class StandardModel<TDocument = AdapterDocument> {
 
   /**
    * @param {string} id - id to be deleted
-   * @param {string} sourceId - used by federated models
+   * @param {string} via - for a federated model, the agreement the record was read through (its sourceOf)
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
   // Takes `unknown` as App takes an entity rather than its id
-  rm(id: unknown, _sourceId: string | null = null): Promise<unknown> {
+  rm(id: unknown, _via: string | null = null): Promise<unknown> {
     return this.adapter.rm(id as string);
   }
 
   /**
    * @param {Array} ids - Array of entity ids to delete
-   * @param {Array} sourceIds - the source of each, used by federated models
+   * @param {Array} vias - for a federated model, the agreement each record was read through (its sourceOf)
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  rmBulk(ids: string[], _sourceIds: (string | null | undefined)[] = []) {
+  rmBulk(ids: string[], _vias: (string | null | undefined)[] = []) {
     return this.adapter.rmBulk(ids);
   }
 

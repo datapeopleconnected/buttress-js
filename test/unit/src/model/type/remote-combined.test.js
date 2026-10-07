@@ -22,14 +22,15 @@ import { Readable } from 'stream';
 import RemoteCombinedModel from '../../../../../dist/model/type/remote-combined.js';
 import StandardModel from '../../../../../dist/model/type/standard.js';
 import ObjectIdHelper from '../../../../../dist/datastore/adapters/object-id.js';
-import { SourceDataSharingRouting } from '../../../../../dist/services/source-ds-routing.js';
+import ButtressAdapter from '../../../../../dist/datastore/adapters/buttress.js';
 
 // RemoteCombinedModel's real constructor/initAdapter need a live app + datastore
 // connections, so bypass them and set only the fields count() actually touches.
 function createModel(localCount, remoteCounts) {
   const model = Object.create(RemoteCombinedModel.prototype);
   model._localModel = { count: async () => localCount };
-  model._remoteModels = remoteCounts.map((count) => ({ count: async () => count }));
+  model._remoteModels = remoteCounts.map((count, idx) => ({ dataSharingId: `agreement-${idx + 1}`, count: async () => count }));
+  model._schemaData = { name: 'car' };
   return model;
 }
 
@@ -58,61 +59,300 @@ describe('model/type/RemoteCombinedModel', () => {
 
       assert.strictEqual(total, 7);
     });
-  });
 
-  // App b's collection reads app a's records through agreement-1. Each routing service shares one Redis, as the
-  // processes and workers of an instance do.
-  describe('routing to a partner', () => {
-    const routings = [];
-    afterEach(() => routings.splice(0).forEach((routing) => routing.clean()));
+    it("adds a partner's count given as text as a number", async () => {
+      const model = createModel(3, ['2', 4]);
 
-    const createRedis = () => {
-      const data = new Map();
-      return {
-        get: async (key) => (data.has(key) ? data.get(key) : null),
-        set: async (key, value) => data.set(key, value) && 'OK',
-      };
-    };
-    const createRouting = (redis) => {
-      const routing = new SourceDataSharingRouting(redis);
-      routings.push(routing);
-      return routing;
-    };
-    const createFederatedModel = (routing, partnerCars) => {
-      const model = Object.create(RemoteCombinedModel.prototype);
-      model.app = { id: 'app-b' };
-      model._sdsRouting = routing;
-      model._localModel = { find: async () => Readable.from([]) };
-      model._remoteModels = [
-        {
-          dataSharingId: 'agreement-1',
-          find: async () => Readable.from(partnerCars),
-          updateByPath: async (body, id) => ({ agreement: 'agreement-1', id, body }),
-        },
-      ];
-      return model;
-    };
-    const waitForRoutesStored = () => new Promise((resolve) => setTimeout(resolve, 150));
+      const total = await model.count({});
 
-    it("routes a lone partner's records once they're read", async () => {
-      const routing = createRouting(createRedis());
-      const model = createFederatedModel(routing, [{ id: 'car-1', sourceId: 'app-a' }]);
-
-      await (await model.find({})).toArray();
-
-      assert.strictEqual(await routing.get('app-b', 'app-a'), 'agreement-1');
+      assert.strictEqual(total, 9);
     });
 
-    it('updates a partner record that another process read', async () => {
-      const redis = createRedis();
-      const reader = createFederatedModel(createRouting(redis), [{ id: 'car-1', sourceId: 'app-a' }]);
-      await (await reader.find({})).toArray();
-      await waitForRoutesStored();
+    it("leaves out a partner's count that isn't a count", async () => {
+      const model = createModel(3, ['two', 4, null, {}, '', -1, 1.5]);
 
-      const writer = createFederatedModel(createRouting(redis), []);
-      const result = await writer.updateByPath([{ path: 'name', value: 'renamed' }], 'car-1', 'app-a');
+      const total = await model.count({});
 
-      assert.deepStrictEqual(result, { agreement: 'agreement-1', id: 'car-1', body: [{ path: 'name', value: 'renamed' }] });
+      assert.strictEqual(total, 7);
+    });
+  });
+
+  // App b's collection reads app a's records through agreement-1 and app c's through agreement-2, as the agreements
+  // record. A partner's records can name any app as their source, so a create never goes by what they say.
+  describe('creating', () => {
+    const createCreatingModel = ({
+      partnerAppIds = { 'agreement-1': 'app-a', 'agreement-2': 'app-c' },
+      unreachable = [],
+      agreements = {},
+    } = {}) => {
+      const created = [];
+      const source = (name) => ({
+        dataSharingId: name,
+        add: async (body) => {
+          const entities = (Array.isArray(body) ? body : [body]).map((entity) => ({ ...entity, from: name }));
+          created.push([name, entities.map((entity) => entity.name)]);
+          return Readable.from(entities);
+        },
+        findById: async (id) => ({ id, from: name }),
+        isDuplicate: async () => false,
+      });
+      const model = Object.create(RemoteCombinedModel.prototype);
+      model.app = { id: 'app-b' };
+      Object.defineProperty(model, 'schemaData', { value: { name: 'car' } });
+      model._localModel = source('local');
+      model._remoteModels = Object.keys(partnerAppIds).filter((id) => !unreachable.includes(id)).map(source);
+      model._partnerAppIds = new Map(Object.entries(partnerAppIds));
+      model._partnerAskedAt = new Map();
+      model._unreachable = new Set(unreachable);
+      // The agreements as stored, which may know a partner's app the model doesn't yet
+      model.__modelManager = { getCoreModel: () => ({ findById: async (id) => agreements[id] ?? null }) };
+      return { model, created };
+    };
+    const madeWhere = async (result) => (await result.toArray()).map((entity) => [entity.name, entity.from]);
+
+    it('creates an entity that names no source, or the app itself, as its own', async () => {
+      const { model } = createCreatingModel();
+
+      assert.deepStrictEqual(
+        [...(await madeWhere(await model.add({ name: 'ours' }))), ...(await madeWhere(await model.add({ name: 'also ours', sourceId: 'APP-B' })))],
+        [
+          ['ours', 'local'],
+          ['also ours', 'local'],
+        ],
+      );
+    });
+
+    it("creates an entity naming a partner's app through the agreement that reaches it, whatever its case", async () => {
+      const { model } = createCreatingModel();
+
+      assert.deepStrictEqual(await madeWhere(await model.add({ name: 'theirs', sourceId: 'APP-C' })), [['theirs', 'agreement-2']]);
+    });
+
+    it('creates each entity of a list where its source is, a source at a time, in the order they came', async () => {
+      const { model, created } = createCreatingModel();
+
+      const result = await model.add([
+        { name: 'ours' },
+        { name: 'a-1', sourceId: 'app-a' },
+        { name: 'c-1', sourceId: 'app-c' },
+        { name: 'a-2', sourceId: 'app-a' },
+      ]);
+
+      assert.deepStrictEqual(await madeWhere(result), [
+        ['ours', 'local'],
+        ['a-1', 'agreement-1'],
+        ['c-1', 'agreement-2'],
+        ['a-2', 'agreement-1'],
+      ]);
+      assert.deepStrictEqual(created, [
+        ['local', ['ours']],
+        ['agreement-1', ['a-1', 'a-2']],
+        ['agreement-2', ['c-1']],
+      ]);
+    });
+
+    it('creates a list for one source in one request', async () => {
+      const { model, created } = createCreatingModel();
+
+      await model.add([
+        { name: 'a-1', sourceId: 'app-a' },
+        { name: 'a-2', sourceId: 'app-a' },
+      ]);
+
+      assert.deepStrictEqual(created, [['agreement-1', ['a-1', 'a-2']]]);
+    });
+
+    it('creates nothing from a list when one of its entities names a source it can\'t create in', async () => {
+      const { model, created } = createCreatingModel();
+
+      await assert.rejects(() => model.add([{ name: 'a-1', sourceId: 'app-a' }, { name: 'x-1', sourceId: 'app-x' }]), {
+        status: 400,
+        code: 'unknown_source',
+      });
+      assert.deepStrictEqual(created, []);
+    });
+
+    it('refuses a source no agreement reaches', async () => {
+      const { model } = createCreatingModel();
+
+      await assert.rejects(() => model.add({ name: 'x', sourceId: 'app-x' }), { status: 400, code: 'unknown_source' });
+    });
+
+    it('refuses a source more than one agreement says it reaches', async () => {
+      const { model } = createCreatingModel({ partnerAppIds: { 'agreement-1': 'app-a', 'agreement-2': 'app-a' } });
+
+      await assert.rejects(() => model.add({ name: 'x', sourceId: 'app-a' }), { status: 409, code: 'ambiguous_source' });
+    });
+
+    it("refuses a source it can't place while an agreement doesn't know which app it reaches", async () => {
+      const { model } = createCreatingModel({ partnerAppIds: { 'agreement-1': 'app-a', 'agreement-2': null } });
+
+      await assert.rejects(() => model.add({ name: 'x', sourceId: 'app-c' }), {
+        status: 409,
+        code: 'data_sharing_partner_unknown',
+      });
+    });
+
+    it("learns a partner's app its agreement has since been given, by its owner or another process", async () => {
+      const { model } = createCreatingModel({
+        partnerAppIds: { 'agreement-1': 'app-a', 'agreement-2': null },
+        agreements: { 'agreement-2': { id: 'agreement-2', remoteApp: { appId: 'app-c' } } },
+      });
+
+      assert.deepStrictEqual(await madeWhere(await model.add({ name: 'theirs', sourceId: 'app-c' })), [['theirs', 'agreement-2']]);
+    });
+
+    it("answers as unavailable for a partner that can't be reached", async () => {
+      const { model } = createCreatingModel({ unreachable: ['agreement-2'] });
+
+      await assert.rejects(() => model.add({ name: 'x', sourceId: 'app-c' }), {
+        status: 503,
+        code: 'data_sharing_partner_unavailable',
+      });
+    });
+
+    it('finds an entity by the source a create named', async () => {
+      const { model } = createCreatingModel();
+
+      assert.deepStrictEqual(await model.findById('car-1', 'app-c'), { id: 'car-1', from: 'agreement-2' });
+    });
+  });
+
+  // An agreement paired before pairing told each side the other's app: the partner is asked when it's connected
+  describe("a partner whose app the agreement doesn't record", () => {
+    const createModel = async (answer) => {
+      const recorded = [];
+      const asked = { times: 0, answer };
+      const services = new Map([
+        ['nrp', { on: async () => () => {} }],
+        [
+          'modelManager',
+          {
+            getCoreModel: () => ({
+              findById: async () => null,
+              recordPartnerAppId: async (...args) => recorded.push(args),
+            }),
+          },
+        ],
+      ]);
+      const adapter = Object.assign(Object.create(ButtressAdapter.prototype), {
+        connect: async () => {},
+        setCollection: async () => {},
+        getSchema: async () => [],
+        partnerAppId: async () => {
+          asked.times++;
+          return asked.answer;
+        },
+      });
+      const datastore = { dataSharingId: 'agreement-1', partnerAppId: null, adapter: { cloneAdapterConnection: () => adapter } };
+      const model = new RemoteCombinedModel({ name: 'car', type: 'collection', properties: {} }, { id: ObjectIdHelper.new() }, services);
+      await model.initAdapter(null, [datastore]);
+      return { model, recorded, asked };
+    };
+
+    it('asks the partner which app it is, and records it on the agreement', async () => {
+      const { model, recorded } = await createModel('app-a');
+
+      assert.deepStrictEqual(recorded, [['agreement-1', 'app-a']]);
+      assert.strictEqual((await model._createTarget('app-a')).via, 'agreement-1');
+      await model.destroy();
+    });
+
+    it("refuses a create that names a partner that doesn't say which app it is", async () => {
+      const { model, recorded } = await createModel(null);
+
+      assert.deepStrictEqual(recorded, []);
+      await assert.rejects(() => model._createTarget('app-a'), { status: 409, code: 'data_sharing_partner_unknown' });
+      await model.destroy();
+    });
+
+    // A partner upgraded after the app connected to it can say which app it is, so a create that needs to know asks
+    it('asks a partner that said nothing again when a create needs it, at most every so often', async () => {
+      const clock = sinon.useFakeTimers({ now: Date.now(), toFake: ['Date'] });
+      try {
+        const { model, asked, recorded } = await createModel(null);
+        asked.answer = 'app-a';
+
+        await assert.rejects(() => model._createTarget('app-a'), { status: 409 });
+        assert.strictEqual(asked.times, 1, 'asked again straight away');
+
+        clock.tick(10000);
+        assert.strictEqual((await model._createTarget('app-a')).via, 'agreement-1');
+        assert.deepStrictEqual([asked.times, recorded], [2, [['agreement-1', 'app-a']]]);
+        await model.destroy();
+      } finally {
+        clock.restore();
+      }
+    });
+  });
+
+  // App b reads its own records and two partners'. agreement-1's partner names app-c, agreement-2's partner app, as the
+  // source of its record.
+  describe("writing to a record it read", () => {
+    const createWritingModel = () => {
+      const written = [];
+      const source = (name, cars) => ({
+        dataSharingId: name,
+        find: async () => Readable.from(cars),
+        exists: async (id) => written.push([name, 'exists', id]) > 0,
+        updateByPath: async (body, id) => written.push([name, 'updateByPath', id]),
+        rm: async (id) => written.push([name, 'rm', id]),
+      });
+      const model = Object.create(RemoteCombinedModel.prototype);
+      model.app = { id: 'app-b' };
+      model._partnerAppIds = new Map([
+        ['agreement-1', 'app-a'],
+        ['agreement-2', 'app-c'],
+      ]);
+      model._unreachable = new Set();
+      model._localModel = source('local', [{ id: 'car-b', sourceId: null }]);
+      model._remoteModels = [
+        source('agreement-1', [{ id: 'car-1', sourceId: 'app-c' }]),
+        source('agreement-2', [{ id: 'car-2', sourceId: 'app-c' }]),
+      ];
+      return { model, written };
+    };
+
+    it('tells where each record it read came from, whatever source the record names', async () => {
+      const { model } = createWritingModel();
+
+      const cars = await (await model.find({})).toArray();
+
+      assert.deepStrictEqual(
+        cars.map((car) => [car.id, model.sourceOf(car)]),
+        [
+          ['car-1', 'agreement-1'],
+          ['car-2', 'agreement-2'],
+          ['car-b', null],
+        ],
+      );
+      assert.strictEqual(model.sourceOf({ id: 'car-1', sourceId: 'app-c' }), undefined);
+    });
+
+    it('writes through the agreement a record was read through, not the route its source leads to', async () => {
+      const { model, written } = createWritingModel();
+      const cars = await (await model.find({})).toArray();
+      const car = cars.find((c) => c.id === 'car-1');
+
+      await model.exists(car.id, model.sourceOf(car));
+      await model.updateByPath([{ path: 'name', value: 'renamed' }], car.id, model.sourceOf(car));
+      await model.rm(car.id, model.sourceOf(car));
+
+      assert.deepStrictEqual(written, [
+        ['agreement-1', 'exists', 'car-1'],
+        ['agreement-1', 'updateByPath', 'car-1'],
+        ['agreement-1', 'rm', 'car-1'],
+      ]);
+    });
+
+    it("writes the app's own record locally", async () => {
+      const { model, written } = createWritingModel();
+      const cars = await (await model.find({})).toArray();
+      const own = cars.find((c) => c.id === 'car-b');
+
+      await model.updateByPath([{ path: 'name', value: 'renamed' }], own.id, model.sourceOf(own));
+
+      assert.deepStrictEqual(written, [['local', 'updateByPath', 'car-b']]);
     });
   });
 
@@ -124,7 +364,6 @@ describe('model/type/RemoteCombinedModel', () => {
     const createQueryModel = (localCars, partnerCars) => {
       const model = Object.create(RemoteCombinedModel.prototype);
       model.app = { id: 'app-b' };
-      model._sdsRouting = { inform: () => {} };
       const localModel = Object.create(StandardModel.prototype);
       localModel.adapter = { ID: ObjectIdHelper };
       model._localModel = Object.assign(localModel, createSource(localCars));
@@ -147,6 +386,24 @@ describe('model/type/RemoteCombinedModel', () => {
 
       assert.deepStrictEqual(page.map((car) => car.n), [3, 4]);
     });
+
+    // Each source sorts as MongoDB does, which takes 1, -1, 'asc', 'desc', 'ascending' and 'descending' in any case
+    it('merges its sources in the direction they are sorted in, however it is given', async () => {
+      const cars = (...ns) => ns.map((n) => ({ id: `car-${n}`, n }));
+      const directions = [-1, '-1', 'desc', 'DESCENDING', 1, 'asc', 'ascending'];
+
+      for (const direction of directions) {
+        const descending = directions.indexOf(direction) < 4;
+        const model = descending
+          ? createQueryModel(cars(5, 3, 1), cars(6, 4, 2))
+          : createQueryModel(cars(1, 3, 5), cars(2, 4, 6));
+
+        const list = await (await model.find({}, {}, 0, 0, { n: direction })).toArray();
+
+        const order = descending ? [6, 5, 4, 3, 2, 1] : [1, 2, 3, 4, 5, 6];
+        assert.deepStrictEqual(list.map((car) => car.n), order, `sorted ${JSON.stringify(direction)}`);
+      }
+    });
   });
 
   describe('removing', () => {
@@ -154,16 +411,15 @@ describe('model/type/RemoteCombinedModel', () => {
       const removed = [];
       const model = Object.create(RemoteCombinedModel.prototype);
       model.app = { id: 'app-b' };
-      model._sdsRouting = { get: async (appId, sourceId) => (sourceId === 'app-a' ? 'agreement-1' : undefined) };
       model._localModel = { rm: async (id) => removed.push(['local', id]) };
       model._remoteModels = [{ dataSharingId: 'agreement-1', rm: async (id) => removed.push(['agreement-1', id]) }];
       return { model, removed };
     };
 
-    it("removes a partner's record from the partner", async () => {
+    it("removes a partner's record from the partner it was read through", async () => {
       const { model, removed } = createRemovingModel();
 
-      await model.rm('car-1', 'app-a');
+      await model.rm('car-1', 'agreement-1');
 
       assert.deepStrictEqual(removed, [['agreement-1', 'car-1']]);
     });
@@ -181,7 +437,11 @@ describe('model/type/RemoteCombinedModel', () => {
     const createFindingModel = () => {
       const model = Object.create(RemoteCombinedModel.prototype);
       model.app = { id: 'app-b' };
-      model._sdsRouting = { get: async (appId, sourceId) => (sourceId === 'app-a' ? 'agreement-1' : undefined) };
+      model._partnerAppIds = new Map([
+        ['agreement-1', 'app-a'],
+        ['agreement-2', 'app-c'],
+      ]);
+      model._unreachable = new Set();
       model._localModel = { findById: async (id) => ({ id, from: 'local' }) };
       model._remoteModels = [
         { dataSharingId: 'agreement-1', findById: async (id) => ({ id, from: 'agreement-1' }) },
@@ -250,7 +510,6 @@ describe('model/type/RemoteCombinedModel', () => {
     const createModel = async (partner) => {
       const app = { id: ObjectIdHelper.new() };
       const model = new RemoteCombinedModel({ name: 'car', type: 'collection', properties: {} }, app, services);
-      model._sdsRouting = { inform: () => {}, get: async () => partner.datastore.dataSharingId };
       await model.initAdapter(null, [partner.datastore]);
       model._localModel = { find: async () => Readable.from([{ id: 'car-b' }]) };
       return model;
@@ -268,7 +527,7 @@ describe('model/type/RemoteCombinedModel', () => {
     it("refuses a write to the partner's record as unavailable", async () => {
       const model = await createModel(createPartner('agreement-1'));
 
-      await assert.rejects(() => model.updateByPath([{ path: 'name', value: 'x' }], 'car-a', 'app-a'), { status: 503, code: 'data_sharing_partner_unavailable' });
+      await assert.rejects(() => model.updateByPath([{ path: 'name', value: 'x' }], 'car-a', 'agreement-1'), { status: 503, code: 'data_sharing_partner_unavailable' });
       await model.destroy();
     });
 
@@ -306,9 +565,6 @@ describe('model/type/RemoteCombinedModel', () => {
       });
       const model = Object.create(RemoteCombinedModel.prototype);
       model.app = { id: 'app-b' };
-      model._sdsRouting = {
-        get: async (appId, sourceId) => ({ 'app-a': 'agreement-1', 'app-c': 'agreement-2' })[sourceId],
-      };
       model._localModel = source('local');
       model._remoteModels = [{ dataSharingId: 'agreement-1', ...source('agreement-1') }];
       if (!unreachable.includes('agreement-2')) model._remoteModels.push({ dataSharingId: 'agreement-2', ...source('agreement-2') });
@@ -316,10 +572,10 @@ describe('model/type/RemoteCombinedModel', () => {
       return { model, removed };
     };
 
-    it('removes each record from its source', async () => {
+    it('removes each record from where it was read', async () => {
       const { model, removed } = createBulkModel();
 
-      await model.rmBulk(['own-1', 'a-1', 'c-1', 'a-2'], [undefined, 'app-a', 'app-c', 'app-a']);
+      await model.rmBulk(['own-1', 'a-1', 'c-1', 'a-2'], [undefined, 'agreement-1', 'agreement-2', 'agreement-1']);
 
       assert.deepStrictEqual(removed.sort(), [
         ['agreement-1', 'rmBulk', ['a-1', 'a-2']],
