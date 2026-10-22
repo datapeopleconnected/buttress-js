@@ -1,11 +1,11 @@
 # syntax=docker/dockerfile:1
-FROM node:24-bookworm-slim AS builder
+FROM node:24-trixie-slim AS builder
 
 ENV APP_TYPE=all
 
 ENV BUTTRESS_APP_PATH=/opt/buttress
 
-RUN apt-get update && apt-get install -y unzip && apt-get clean
+RUN apt-get update && apt-get install -y --no-install-recommends unzip && apt-get clean
 
 WORKDIR /opt/buttress
 
@@ -15,9 +15,9 @@ RUN npm ci
 RUN npm run build
 
 # Production stage
-FROM node:24-bookworm-slim
+FROM node:24-trixie-slim
 
-RUN apt-get update && apt-get install -y git openssh-client tini && apt-get clean
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git openssh-client tini && apt-get clean
 
 COPY --from=builder /opt/buttress/bin /opt/buttress/bin
 COPY --from=builder /opt/buttress/node_modules /opt/buttress/node_modules

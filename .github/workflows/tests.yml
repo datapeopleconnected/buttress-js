@@ -301,6 +301,8 @@ jobs:
       with:
         context: .
         push: ${{ env.PUBLISH == 'true' }}
+        # Always fetch the newest base image, so Node and Debian security fixes reach every build
+        pull: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
