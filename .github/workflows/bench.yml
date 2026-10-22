@@ -44,7 +44,8 @@ jobs:
 
     services:
       mongodb:
-        image: mongo:8
+        # mongo:8 refuses to start on the runners' Linux 6.19+ kernel (SERVER-121912); back to 8 once fixed
+        image: mongo:7
         ports:
           - 27018:27017
         options: >-
