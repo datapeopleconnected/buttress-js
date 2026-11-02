@@ -1,0 +1,6 @@
+.git
+node_modules
+deploy
+app_data
+logs
+*.env
