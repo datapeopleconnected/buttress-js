@@ -1,13 +1,12 @@
-# One Buttress v2 instance. Per deployment:
-# - .production.env: BUTTRESS_APP_PATH=/app, BUTTRESS_MONGO_URL=<user>:<pass>@mongo, BUTTRESS_REDIS_HOST=redis
+# One Buttress v2 instance: the REST and socket services. MongoDB and Redis are wherever BUTTRESS_MONGO_URL and
+# BUTTRESS_REDIS_HOST point; to run either in this stack as well, add docker-compose.mongo.yml and/or
+# docker-compose.redis.yml (see the top of each). Per deployment:
+# - .production.env: BUTTRESS_APP_PATH=/app, BUTTRESS_MONGO_URL=<user>:<pass>@<host>, BUTTRESS_REDIS_HOST=<host>
 # - compose's own .env: REST_PORT / SOCK_PORT, equal to BUTTRESS_REST_LISTEN_PORT / BUTTRESS_SOCK_LISTEN_PORT
-# - MongoDB runs elsewhere on the external Docker network `buttress`, as host `mongo`
 x-buttress: &buttress
   build: .
   image: buttress:v2
   restart: unless-stopped
-  depends_on: [redis]
-  networks: [default, buttress]
   volumes:
     - ./.production.env:/app/.production.env:ro
     - ./app_data:/app/app_data
@@ -22,11 +21,3 @@ services:
     <<: *buttress
     command: ["node", "socket-app.js"]
     ports: ["127.0.0.1:${SOCK_PORT}:${SOCK_PORT}"]
-
-  redis:
-    image: redis:7.4-alpine
-    restart: unless-stopped
-
-networks:
-  buttress:
-    external: true

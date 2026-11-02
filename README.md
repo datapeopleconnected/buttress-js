@@ -34,6 +34,6 @@ You can find the API here: https://github.com/wearelighten/buttress-js-api
 
 ## Docker (v2.x)
 
-`docker compose up -d --build` runs the REST and socket services and a Redis. MongoDB is expected on the external
-Docker network `buttress` as host `mongo`; see the comments at the top of `docker-compose.yml` for the per-deployment
-settings.
+`docker compose up -d --build` runs the REST and socket services; MongoDB and Redis are wherever
+`BUTTRESS_MONGO_URL` and `BUTTRESS_REDIS_HOST` point. To run either inside the stack, add `docker-compose.mongo.yml`
+and/or `docker-compose.redis.yml` via `COMPOSE_FILE` (see the comments at the top of each compose file).
