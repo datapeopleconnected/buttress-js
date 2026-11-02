@@ -31,3 +31,9 @@ npm start
 ## Testing ##
 Tests are implemented in the ButtressJS API.
 You can find the API here: https://github.com/wearelighten/buttress-js-api
+
+## Docker (v2.x)
+
+`docker compose up -d --build` runs the REST and socket services and a Redis. MongoDB is expected on the external
+Docker network `buttress` as host `mongo`; see the comments at the top of `docker-compose.yml` for the per-deployment
+settings.
