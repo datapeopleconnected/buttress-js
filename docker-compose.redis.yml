@@ -1,0 +1,13 @@
+# Optional: a Redis for this instance alone. Enable it by adding this file to COMPOSE_FILE in compose's own .env, e.g.
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.redis.yml
+# and set BUTTRESS_REDIS_HOST=redis in .production.env. Buttress uses it for pub/sub between workers, so it keeps no data.
+services:
+  rest:
+    depends_on: [redis]
+
+  socket:
+    depends_on: [redis]
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped

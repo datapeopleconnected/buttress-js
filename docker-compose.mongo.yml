@@ -1,0 +1,22 @@
+# Optional: a MongoDB for this instance alone. Enable it with, in compose's own .env:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.mongo.yml   (add :docker-compose.redis.yml for a Redis too)
+# and set BUTTRESS_MONGO_URL=<user>:<pass>@mongo in .production.env. Root credentials go in .mongo.env
+# (MONGO_INITDB_ROOT_USERNAME / MONGO_INITDB_ROOT_PASSWORD); create the app's user (readWrite on
+# <BUTTRESS_APP_CODE>-prod, authenticated against admin) once it's up. MONGO_CACHE_GB in .env sets the WiredTiger cache.
+services:
+  rest:
+    depends_on: [mongo]
+
+  socket:
+    depends_on: [mongo]
+
+  mongo:
+    image: mongo:4.4   # v2's mongodb driver (~3.5) is the limit
+    restart: unless-stopped
+    command: ["--wiredTigerCacheSizeGB", "${MONGO_CACHE_GB:-0.25}"]
+    env_file: .mongo.env
+    volumes:
+      - mongo-data:/data/db
+
+volumes:
+  mongo-data:
